@@ -3,16 +3,18 @@
 A working tree for dietrich with an evolving implementation history.
 
 ## Overview
-dietrich is moving through bootstrap push work.
+dietrich records the stable project shape and the work still worth checking.
 
 ## Status
-Project phase: bootstrap. Activity resumed after a longer gap.
+Lifecycle stage: exploration. Maintenance guidance now reflects the stable shape.
 
 ## Development
 - Aligned local and CI checks for packaging.
 
 ## Usage
-- Merged scattered workbench guidance into the docs.
+- Merged scattered release guidance into the docs.
 
-## Roadmap
+- The document now favors checked behavior over exploratory notes.
+
+## Current Focus
 Use the next review to check behavior before adding surface area.
