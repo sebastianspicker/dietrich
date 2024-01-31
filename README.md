@@ -3,10 +3,10 @@
 A working tree for dietrich with an evolving implementation history.
 
 ## Overview
-dietrich records the stable project shape and the work still worth checking.
+dietrich documents maintained build commands, known limits, and remaining work.
 
 ## Status
-Lifecycle stage: exploration. Maintenance guidance now reflects the stable shape.
+Lifecycle stage: exploration. Earlier setup detail now lives in maintained guidance.
 
 ## Development
 - Aligned local and CI checks for packaging.
@@ -18,3 +18,9 @@ Lifecycle stage: exploration. Maintenance guidance now reflects the stable shape
 
 ## Current Focus
 Use the next review to check behavior before adding surface area.
+
+Keep the next pass focused on verification and smaller changes.
+## Features
+- Left release concrete enough for the next pass to build on.
+
+- Earlier scratch detail is now represented in maintained sections.
