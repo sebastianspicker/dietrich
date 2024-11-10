@@ -9,7 +9,9 @@ dietrich documents maintained build commands, known limits, and remaining work.
 Lifecycle stage: maintenance. The useful early notes have been carried forward.
 
 ## Development
-- Aligned local and CI checks for packaging.
+- Aligned local and CI checks for workbench.
+
+- Earlier scratch detail is now represented in maintained sections.
 
 ## Usage
 - Rewrote the workbench explanation around the maintained behavior.

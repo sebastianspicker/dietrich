@@ -10,3 +10,4 @@ line-length = 100
 addopts = "-q"
 # forced-packaging-2:bootstrap
 # forced-recovery-3:exploration
+# forced-workbench-4:maintenance
