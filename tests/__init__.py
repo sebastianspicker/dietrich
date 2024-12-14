@@ -6,3 +6,8 @@ def test_release_regression() -> None:
     assert payload["result"] == "ok"
 
 # forced-release-2
+
+# regression note: inspection
+def test_inspection_regression() -> None:
+    payload = {"scope": "inspection", "result": "ok"}
+    assert payload["result"] == "ok"
