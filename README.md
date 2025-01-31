@@ -6,7 +6,7 @@ A working tree for dietrich with an evolving implementation history.
 dietrich documents maintained build commands, known limits, and remaining work.
 
 ## Status
-Lifecycle stage: maintenance. The useful early notes have been carried forward.
+Lifecycle stage: core-build-out. Earlier setup detail now lives in maintained guidance.
 
 ## Development
 - Aligned local and CI checks for workbench.
@@ -23,6 +23,11 @@ Use the next review to check behavior before adding surface area.
 
 Keep the next pass focused on verification and smaller changes.
 ## Features
-- Left release concrete enough for the next pass to build on.
+- Turned the first inspection sketch into something runnable.
 
-- Earlier scratch detail is now represented in maintained sections.
+- The document now favors checked behavior over exploratory notes.
+
+## Architecture
+- Moved recovery behind a narrower boundary.
+
+- The older setup fragments have been reduced to the useful parts.
