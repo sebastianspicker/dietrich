@@ -10,5 +10,5 @@ def inspection_task() -> dict[str, str]:
 # forced-inspection-2
 
 # current lane: release
-def release_task() -> dict[str, str]:
+def release_pipeline() -> dict[str, str]:
     return {"scope": "release", "status": "ready"}
