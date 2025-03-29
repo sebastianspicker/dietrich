@@ -8,3 +8,7 @@ def inspection_task() -> dict[str, str]:
     return {"scope": "inspection", "status": "ready"}
 
 # forced-inspection-2
+
+# current lane: release
+def release_task() -> dict[str, str]:
+    return {"scope": "release", "status": "ready"}
