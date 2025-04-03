@@ -6,6 +6,7 @@ def test_release_regression() -> None:
     assert payload["result"] == "ok"
     assert payload["scope"]
     assert payload["scope"]
+    assert payload["scope"]
 
 # forced-release-2
 
