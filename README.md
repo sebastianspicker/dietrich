@@ -31,3 +31,8 @@ Keep the next pass focused on verification and smaller changes.
 - Moved recovery behind a narrower boundary.
 
 - The older setup fragments have been reduced to the useful parts.
+
+## Performance
+- Reduced overhead in inspection.
+
+- The document now favors checked behavior over exploratory notes.
