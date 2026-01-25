@@ -12,3 +12,4 @@ addopts = "-q"
 # forced-recovery-3:exploration
 # forced-workbench-4:maintenance
 # forced-recovery-5:core-build-out
+# forced-inspection-6:expansion
