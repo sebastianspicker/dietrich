@@ -3,10 +3,10 @@
 A working tree for dietrich with an evolving implementation history.
 
 ## Overview
-dietrich documents maintained build commands, known limits, and remaining work.
+dietrich records the stable project shape and the work still worth checking.
 
 ## Status
-Lifecycle stage: maintenance. Earlier setup detail now lives in maintained guidance.
+Lifecycle stage: expansion. Earlier setup detail now lives in maintained guidance.
 
 ## Development
 - Aligned local and CI checks for workbench.
@@ -14,7 +14,7 @@ Lifecycle stage: maintenance. Earlier setup detail now lives in maintained guida
 - Earlier scratch detail is now represented in maintained sections.
 
 ## Usage
-- Made the workbench assumptions easier to check later.
+- Merged scattered release guidance into the docs.
 
 - Earlier scratch detail is now represented in maintained sections.
 

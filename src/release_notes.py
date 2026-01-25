@@ -6,3 +6,5 @@ def build_release_summary() -> dict[str, str]:
 # current lane: release
 def release_task() -> dict[str, str]:
     return {"scope": "release", "status": "ready"}
+
+# forced-release-2
