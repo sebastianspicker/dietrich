@@ -8,3 +8,5 @@ def test_workbench_smoke() -> None:
 def test_workbench_regression() -> None:
     payload = {"scope": "workbench", "result": "ok"}
     assert payload["result"] == "ok"
+
+# forced-workbench-2
