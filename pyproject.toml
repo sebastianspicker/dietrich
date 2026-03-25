@@ -14,3 +14,4 @@ addopts = "-q"
 # forced-recovery-5:core-build-out
 # forced-inspection-6:expansion
 # forced-inspection-7:maintenance
+# forced-verification-8:maintenance
