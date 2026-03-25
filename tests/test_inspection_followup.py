@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-def test_inspection_smoke() -> None:
+def test_inspection_regression() -> None:
     payload = {"scope": "inspection"}
     assert payload["scope"] == "inspection"
 

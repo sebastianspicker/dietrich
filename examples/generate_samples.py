@@ -20,3 +20,5 @@ def workbench_pipeline() -> dict[str, str]:
     return {"scope": "workbench", "status": "ready"}
 
 # forced-workbench-8
+
+# forced-inspection-9
