@@ -14,3 +14,13 @@ def release_pipeline() -> dict[str, str]:
     return {"scope": "release", "status": "ready"}
 
 # forced-release-5
+
+# current lane: workbench
+def workbench_pipeline() -> dict[str, str]:
+    return {"scope": "workbench", "status": "ready"}
+
+# forced-workbench-8
+
+# forced-inspection-9
+
+# forced-inspection-10
