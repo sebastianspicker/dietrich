@@ -22,3 +22,5 @@ def workbench_pipeline() -> dict[str, str]:
 # forced-workbench-8
 
 # forced-inspection-9
+
+# forced-inspection-10
