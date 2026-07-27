@@ -1,0 +1,169 @@
+/* Document intake, output/unlock, advanced, activity ledger. */
+
+#path-row {
+    height: 3;
+}
+
+#path-row Input {
+    width: 1fr;
+    height: 3;
+    padding: 0 1;
+    background: #252E3A;
+    color: #D7DDE6;
+    border: solid #3A4656;
+}
+
+#file-kind {
+    width: 10;
+    height: 3;
+    content-align: center middle;
+    background: #1B222C;
+    color: #8B97A8;
+    border-top: solid #3A4656;
+    border-bottom: solid #3A4656;
+    border-right: solid #3A4656;
+}
+
+#btn-inspect {
+    width: 16;
+    height: 3;
+    margin-left: 1;
+    background: #4F7CAC;
+    color: #D7DDE6;
+    border: solid #4F7CAC;
+    text-style: bold;
+}
+
+#out-row {
+    height: 4;
+}
+
+#out-row Input {
+    width: 1fr;
+    height: 3;
+    padding: 0 1;
+    background: #252E3A;
+    color: #D7DDE6;
+    border: solid #3A4656;
+}
+
+#overwrite-block {
+    width: 36;
+    height: 4;
+    margin-left: 1;
+    padding: 0 1;
+    background: #1B222C;
+}
+
+#chk-overwrite {
+    height: 2;
+    color: #D7DDE6;
+}
+
+#overwrite-hint {
+    height: 2;
+    color: #8B97A8;
+}
+
+#btn-unlock {
+    width: 28;
+    height: 3;
+    margin-left: 1;
+    background: #C4A35A;
+    color: #1A1F27;
+    border: solid #C4A35A;
+    text-style: bold;
+}
+
+#utility-row {
+    height: auto;
+    min-height: 3;
+    margin-bottom: 1;
+}
+
+#advanced {
+    width: 1fr;
+    height: auto;
+    padding: 0;
+    background: #10151C;
+    border: solid #3A4656;
+}
+
+#advanced CollapsibleTitle {
+    height: 3;
+    padding: 0 1;
+    background: #10151C;
+    color: #8B97A8;
+    border: none;
+    content-align: left middle;
+}
+
+#advanced CollapsibleContents {
+    padding: 0;
+    background: #1B222C;
+    border-top: solid #3A4656;
+}
+
+#adv-grid {
+    height: auto;
+    max-height: 18;
+    padding: 0 1 1 1;
+}
+
+#adv-grid Input {
+    margin-bottom: 0;
+    background: #252E3A;
+    border: solid #3A4656;
+}
+
+#secondary-actions {
+    width: 36;
+    height: 3;
+}
+
+#btn-export, #btn-quit {
+    width: 1fr;
+    height: 3;
+    margin-left: 1;
+    background: #12161C;
+    color: #D7DDE6;
+    border: solid #3A4656;
+    text-style: bold;
+}
+
+#activity-panel {
+    height: 1fr;
+    min-height: 7;
+    background: #0E1319;
+    border: solid #4F7CAC;
+}
+
+#activity-header {
+    height: 2;
+    padding: 0 1;
+    background: #1B222C;
+}
+
+#activity-header .section-label {
+    width: 1fr;
+    height: 2;
+    padding-top: 1;
+    color: #4F7CAC;
+}
+
+#session-state {
+    width: 12;
+    height: 2;
+    padding-top: 1;
+    content-align: right top;
+    color: #8B97A8;
+    text-style: bold;
+}
+
+#log {
+    height: 1fr;
+    padding: 0 1;
+    background: #0E1319;
+    color: #D7DDE6;
+    border: none;
+}

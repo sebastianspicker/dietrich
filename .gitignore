@@ -1,0 +1,73 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
+.env.*
+
+# Test / lint caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+/.coverage.*
+coverage.xml
+/coverage.json
+htmlcov/
+/test-results/
+/pytest-report.xml
+.tox/
+.nox/
+
+# Logs and local tool state
+*.log
+.cache/
+
+# Local research fuzz output
+research/fuzz/out/
+research/fuzz/corpus/
+
+# Local secrets / private workbooks (never publish)
+*.pem
+!tests/**/*.pem
+private/
+local/
+*.local.xlsx
+*.local.docx
+docs/screenshots/_tmp*
+docs/screenshots/_demo*
+docs/screenshots/werkbank-visual-smoke.html
+/examples/out/
+examples/_work/
+
+# Local tooling and work notes
+/.agent/
+/.agents/
+/.claude/
+/.codacy/
+/.codegraph/
+/.codex/
+/.cursor/
+/.internal/
+/.serena/
+/AGENTS.md
+/*.ledger.md
+
+# Packaging
+*.whl
+*.tar.gz

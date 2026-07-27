@@ -1,4 +1,0 @@
-pytest
-ruff
-
-# forced-release-1

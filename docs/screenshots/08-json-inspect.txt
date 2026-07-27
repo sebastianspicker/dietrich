@@ -1,0 +1,31 @@
+{
+  "input_path": "protected.xlsx",
+  "document_format": "excel_ooxml",
+  "strategies": [
+    "soft:sheetProtection",
+    "soft:workbookProtection"
+  ],
+  "soft_protections": [
+    {
+      "path": "xl/worksheets/sheet1.xml",
+      "kind": "sheetProtection",
+      "count": 1
+    },
+    {
+      "path": "xl/workbook.xml",
+      "kind": "workbookProtection",
+      "count": 1
+    }
+  ],
+  "encrypted": false,
+  "signed": false,
+  "vba_project_present": false,
+  "user_password_required": false,
+  "owner_restrictions": false,
+  "encryption_scheme": null,
+  "encryption_version": null,
+  "encryption_spin_count": null,
+  "encryption_cost_class": null,
+  "hashcat_mode": null,
+  "notes": []
+}

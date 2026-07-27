@@ -1,0 +1,84 @@
+/* Compact terminal modes (narrow / short). */
+
+Screen.-compact-height #brand-row {
+    height: 3;
+}
+
+Screen.-compact-height #brand-block,
+Screen.-compact-height #brand-meta {
+    height: 3;
+}
+
+Screen.-compact-height #brand-name {
+    height: 1;
+    padding-top: 0;
+}
+
+Screen.-compact-height #banner {
+    height: 1;
+    padding: 0 1;
+}
+
+Screen.-compact-height #status-panel {
+    height: 5;
+    min-height: 5;
+    max-height: 5;
+    margin: 0;
+    padding: 0 1;
+}
+
+Screen.-compact-height #status-header {
+    height: 1;
+}
+
+Screen.-compact-height #status-meta {
+    display: none;
+}
+
+Screen.-compact-height #out-row,
+Screen.-compact-height #overwrite-block {
+    height: 3;
+}
+
+Screen.-compact-height #overwrite-hint {
+    display: none;
+}
+
+Screen.-compact-height #utility-row {
+    margin-bottom: 0;
+}
+
+Screen.-compact-height #activity-panel {
+    min-height: 3;
+}
+
+Screen.-compact-height #activity-header,
+Screen.-compact-height #activity-header .section-label,
+Screen.-compact-height #session-state {
+    height: 1;
+    padding-top: 0;
+}
+
+Screen.-compact-height #key-footer {
+    height: 1;
+    border-top: none;
+}
+
+Screen.-compact-height #session-rail {
+    width: 18;
+}
+
+Screen.-compact-width #brand-meta,
+Screen.-compact-width #file-kind,
+Screen.-compact-width #overwrite-hint {
+    display: none;
+}
+
+Screen.-compact-width #overwrite-block,
+Screen.-compact-width #btn-unlock {
+    width: 18;
+}
+
+Screen.-compact-width #secondary-actions {
+    width: 28;
+}

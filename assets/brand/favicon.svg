@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="Dietrich">
+  <!--
+    Simplified mark for 16-32 px. Thicker relative stroke, same open-bow / shank / tip language.
+  -->
+  <g
+    stroke="currentColor"
+    stroke-width="3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M12.5 10.5c-5.5 0-8.5 2-8.5 5.5s3 5.5 8.5 5.5"/>
+    <path d="M11.5 16h13l4.5 1.2"/>
+  </g>
+</svg>

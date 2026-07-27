@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="Dietrich picklock mark">
+  <!--
+    Motif: single German Dietrich (picklock) - open bow, continuous shank, simple tip.
+    Orientation: tip right-down ~15°. Stroke ~11% of mark height. Square canvas, mark centered.
+    Ink: currentColor (default Paper gray #D7DDE6 in dark UI).
+  -->
+  <g
+    stroke="currentColor"
+    stroke-width="4.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <!-- Open bow / handle loop (gap on shank side) -->
+    <path d="M25 24c-10.5 0-16 3.6-16 8s5.5 8 16 8"/>
+    <!-- Shank + tip (~15° right-down); pick aspect ~3.5:1 -->
+    <path d="M23 32h30l9 2.4"/>
+  </g>
+</svg>

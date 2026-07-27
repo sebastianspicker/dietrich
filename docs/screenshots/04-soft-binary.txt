@@ -1,0 +1,10 @@
+Wrote: plain_unprotected.xls
+Format: legacy_cfbf
+Removed worksheet protections: 0
+Removed workbook protections: 0
+Removed document protections: 0
+Removed modify verifiers: 0
+PDF permission strips: 0
+Signatures stripped: 0
+VBA unlocked: 0
+warning: No binary protection records found; wrote unchanged copy.

@@ -1,0 +1,76 @@
+/* Workbench shell + left session rail with live recent files. */
+
+#workbench {
+    width: 1fr;
+    height: 1fr;
+    background: #12161C;
+}
+
+#session-rail {
+    display: none;
+    width: 24;
+    height: 1fr;
+    padding: 0;
+    border-right: solid #3A4656;
+    background: #10151C;
+}
+
+#session-head {
+    height: 2;
+    padding: 0 1;
+    color: #8B97A8;
+    text-style: bold;
+    content-align: left middle;
+    border-bottom: solid #3A4656;
+}
+
+#recent-list {
+    height: 1fr;
+    min-height: 4;
+    padding: 0;
+    background: #10151C;
+    color: #D7DDE6;
+    border: none;
+    scrollbar-background: #10151C;
+    scrollbar-color: #3A4656;
+}
+
+#recent-list > .option-list--option {
+    padding: 0 1;
+    color: #D7DDE6;
+}
+
+#recent-list > .option-list--option-highlighted {
+    background: #252E3A;
+    color: #D7DDE6;
+}
+
+#recent-list > .option-list--option-hover {
+    background: #1B222C;
+}
+
+#session-empty {
+    height: auto;
+    min-height: 3;
+    padding: 1;
+    color: #8B97A8;
+    display: none;
+}
+
+#session-empty.-visible {
+    display: block;
+}
+
+#session-foot {
+    height: 2;
+    padding: 0 1;
+    color: #8B97A8;
+    border-top: solid #3A4656;
+    content-align: left middle;
+}
+
+#main-column {
+    width: 1fr;
+    height: 1fr;
+    padding: 0 1;
+}
