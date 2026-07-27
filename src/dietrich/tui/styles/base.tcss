@@ -1,0 +1,38 @@
+/* Dietrich TUI · base canvas, focus, shared chrome tokens.
+   Canonical hex values are shared with brand.py and assets/brand/palette.json.
+   night-slate #12161C · bench-iron #1B222C · drawer #252E3A · cold-seam #3A4656
+   paper-gray #D7DDE6 · filing #8B97A8 · brass #C4A35A · stamp #4F7CAC
+   oil #5F8F6B · amber #C9893A · seal #B54A4A
+*/
+
+Screen {
+    layout: vertical;
+    background: #12161C;
+    color: #D7DDE6;
+}
+
+.section-label {
+    height: 1;
+    color: #8B97A8;
+    text-style: bold;
+}
+
+.field-label {
+    width: 16;
+    padding-top: 1;
+    color: #8B97A8;
+}
+
+/* Explicit high-contrast focus treatment. */
+Input:focus, Button:focus, Checkbox:focus, CollapsibleTitle:focus, OptionList:focus {
+    border: tall #C4A35A;
+}
+
+#input-path:focus,
+#btn-inspect:focus {
+    border: tall #4F7CAC;
+}
+
+Button:disabled {
+    text-style: dim;
+}

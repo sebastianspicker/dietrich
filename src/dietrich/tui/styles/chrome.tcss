@@ -1,0 +1,49 @@
+/* Top brand chrome, authorized plaque, key footer. */
+
+#brand-row {
+    height: 4;
+    padding: 0 2;
+    background: #12161C;
+    border-bottom: solid #3A4656;
+}
+
+#brand-block {
+    width: 1fr;
+    height: 4;
+}
+
+#brand-name {
+    height: 2;
+    padding-top: 1;
+    color: #D7DDE6;
+    text-style: bold;
+}
+
+#brand-subtitle {
+    height: 1;
+    color: #8B97A8;
+}
+
+#brand-meta {
+    width: 36;
+    height: 4;
+    content-align: right middle;
+    color: #8B97A8;
+}
+
+#banner {
+    height: 3;
+    padding: 1 2;
+    background: #4F7CAC;
+    color: #D7DDE6;
+    text-style: bold;
+}
+
+#key-footer {
+    height: 2;
+    padding: 0 2;
+    background: #12161C;
+    color: #8B97A8;
+    border-top: solid #3A4656;
+    content-align: left middle;
+}

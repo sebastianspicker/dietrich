@@ -1,0 +1,87 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dietrich"
+version = "0.4.0a4"
+description = "Dietrich: the office picklock. Soft unlock and open-password recovery for Excel, Word, PowerPoint, and PDF (authorized documents)."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+  { name = "Sebastian Spicker" },
+]
+keywords = [
+  "dietrich",
+  "picklock",
+  "excel",
+  "xlsx",
+  "docx",
+  "pptx",
+  "pdf",
+  "ooxml",
+  "password",
+  "unlock",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Office/Business",
+  "Topic :: Utilities",
+]
+dependencies = []
+
+[project.optional-dependencies]
+crypto = ["msoffcrypto-tool>=5.0.0"]
+pdf = ["pikepdf>=8.0.0"]
+research = ["olefile>=0.46"]
+sign = ["cryptography>=42.0.0"]
+ui = ["textual>=1.0.0"]
+full = [
+  "msoffcrypto-tool>=5.0.0",
+  "pikepdf>=8.0.0",
+  "olefile>=0.46",
+  "cryptography>=42.0.0",
+  "textual>=1.0.0",
+]
+dev = ["pytest>=8.0.0", "ruff>=0.6.0"]
+
+[project.scripts]
+dietrich = "dietrich.cli:main"
+dietrich-tui = "dietrich.tui:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dietrich"]
+
+# Map src-layout packages to importable top-level names in editable/wheel installs.
+[tool.hatch.build.targets.wheel.sources]
+"src/dietrich" = "dietrich"
+
+# Non-.py package data (Textual CSS split under tui/styles/).
+[tool.hatch.build.targets.wheel.force-include]
+"src/dietrich/tui/styles/base.tcss" = "dietrich/tui/styles/base.tcss"
+"src/dietrich/tui/styles/chrome.tcss" = "dietrich/tui/styles/chrome.tcss"
+"src/dietrich/tui/styles/session.tcss" = "dietrich/tui/styles/session.tcss"
+"src/dietrich/tui/styles/dossier.tcss" = "dietrich/tui/styles/dossier.tcss"
+"src/dietrich/tui/styles/forms.tcss" = "dietrich/tui/styles/forms.tcss"
+"src/dietrich/tui/styles/compact.tcss" = "dietrich/tui/styles/compact.tcss"
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+testpaths = ["tests"]
+markers = [
+  "e2e: full CLI end-to-end demos (real subprocess entrypoints)",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]

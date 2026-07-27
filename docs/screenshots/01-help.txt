@@ -1,0 +1,71 @@
+usage: dietrich [-h] [--tui] [--output PATH] [--inspect] [--json] [--force]
+                [--worksheets-only] [--keep-document-protection]
+                [--keep-modify-verifier] [--soft-only] [--password PASSWORD]
+                [--wordlist PATH] [--mask MASK] [--brute] [--charset CHARSET]
+                [--max-length MAX_LENGTH] [--max-candidates MAX_CANDIDATES]
+                [--workers WORKERS] [--hashcat] [--hashcat-arg HASHCAT_ARG]
+                [--hashcat-timeout HASHCAT_TIMEOUT] [--resign-cert PEM]
+                [--resign-key PEM] [--export-hash {hashcat,john}]
+                [--strip-signatures] [--vba] [--research-fuzz]
+                [--fuzz-count FUZZ_COUNT] [--fuzz-seed FUZZ_SEED]
+                [INPUT]
+
+Dietrich - the office picklock. Remove soft protection and recover open
+passwords from Office and PDF documents you own or are authorized to modify.
+(German: Dietrich = picklock; also a classic first name.)
+
+positional arguments:
+  INPUT                 Input document path (optional with --tui)
+
+options:
+  -h, --help            show this help message and exit
+  --tui                 Launch the terminal UI (requires: pip install
+                        'dietrich[ui]')
+  --output PATH         Output path
+  --inspect             Inspect without writing output
+  --json                Machine-readable JSON output
+  --force               Overwrite existing output
+  --worksheets-only     Excel: remove sheet protection only
+  --keep-document-protection
+                        Word: keep documentProtection
+  --keep-modify-verifier
+                        PowerPoint: keep modifyVerifier
+  --soft-only           Never attempt open-password recovery
+  --password PASSWORD   Password for open-encrypted documents
+  --wordlist PATH       Password wordlist file
+  --mask MASK           Mask attack pattern, e.g. '?d?d?d?d'
+  --brute               Enable brute force (requires --charset/--max-length;
+                        default digits len<=4)
+  --charset CHARSET     Charset name for brute: digits, lower, upper, alpha,
+                        alnum, printable
+  --max-length MAX_LENGTH
+                        Max brute length
+  --max-candidates MAX_CANDIDATES
+                        Cap on password candidates (default 5000000)
+  --workers WORKERS     Parallel password-verify workers for
+                        wordlist/mask/brute (default 1)
+  --hashcat             External hashcat GPU recovery (needs --wordlist,
+                        --mask, or --hashcat-arg)
+  --hashcat-arg HASHCAT_ARG
+                        Extra argument passed to hashcat (repeatable)
+  --hashcat-timeout HASHCAT_TIMEOUT
+                        Seconds before hashcat is aborted (default: no limit)
+  --resign-cert PEM     After unlock, re-sign OOXML with this certificate
+                        (PEM)
+  --resign-key PEM      Private key PEM for --resign-cert (honest re-sign
+                        only)
+  --export-hash {hashcat,john}
+                        Export a hash line for external GPU tools and exit
+  --strip-signatures    Strip OOXML digital signatures (unsigned working copy;
+                        loud warning)
+  --vba                 Clear VBA project password verifiers in vbaProject.bin
+                        (opt-in)
+  --research-fuzz       Experimental: generate local fuzz mutants from INPUT
+                        into --output dir
+  --fuzz-count FUZZ_COUNT
+                        Experimental: mutant count for --research-fuzz
+  --fuzz-seed FUZZ_SEED
+                        Experimental: RNG seed for --research-fuzz
+
+Authorized use only - unlock documents you own or may modify. Soft locks are
+not encryption; IRM/Purview cannot be removed without a license.

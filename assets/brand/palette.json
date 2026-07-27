@@ -1,0 +1,149 @@
+{
+  "$schema_comment": "Dietrich interface color tokens and Textual theme mapping.",
+  "name": "Werkbank",
+  "version": "1.0.0",
+  "tokens": {
+    "night-slate": {
+      "hex": "#12161C",
+      "role": "Canvas",
+      "usage": "App background, terminal canvas"
+    },
+    "bench-iron": {
+      "hex": "#1B222C",
+      "role": "Surface",
+      "usage": "Panels, status box fill"
+    },
+    "drawer": {
+      "hex": "#252E3A",
+      "role": "Raised",
+      "usage": "Elevated rows, inputs, hover fill"
+    },
+    "cold-seam": {
+      "hex": "#3A4656",
+      "role": "Hairline",
+      "usage": "Borders, dividers, inactive chrome"
+    },
+    "paper-gray": {
+      "hex": "#D7DDE6",
+      "role": "Ink",
+      "usage": "Primary text on dark"
+    },
+    "filing": {
+      "hex": "#8B97A8",
+      "role": "Mute",
+      "usage": "Secondary labels, hints, footer"
+    },
+    "oxidized-brass": {
+      "hex": "#C4A35A",
+      "role": "Action",
+      "usage": "Primary actions, Unlock, focus keyline"
+    },
+    "stamp-blue": {
+      "hex": "#4F7CAC",
+      "role": "Signal",
+      "usage": "Inspect, info, ethics/authorized plaque"
+    },
+    "oil-green": {
+      "hex": "#5F8F6B",
+      "role": "OK",
+      "usage": "Success, completed unlock"
+    },
+    "amber-key": {
+      "hex": "#C9893A",
+      "role": "Warn",
+      "usage": "Warnings, soft caution"
+    },
+    "seal-red": {
+      "hex": "#B54A4A",
+      "role": "Stop",
+      "usage": "Errors, hard stops"
+    },
+    "cool-ledger": {
+      "hex": "#E8ECF1",
+      "role": "Light canvas",
+      "usage": "Optional light docs / rare light UI"
+    },
+    "carbon": {
+      "hex": "#1A1F27",
+      "role": "Light ink",
+      "usage": "Text on light canvas"
+    }
+  },
+  "textual": {
+    "comment": "Palette role names ≠ Textual Theme field names. Brass (Action) → primary. Stamp blue (Signal) → secondary and accent. Never wire Textual accent to brass.",
+    "primary": {
+      "token": "oxidized-brass",
+      "hex": "#C4A35A",
+      "usage": "Primary actions, Unlock, focus/status border"
+    },
+    "secondary": {
+      "token": "stamp-blue",
+      "hex": "#4F7CAC",
+      "usage": "Inspect, info chrome, log border"
+    },
+    "accent": {
+      "token": "stamp-blue",
+      "hex": "#4F7CAC",
+      "usage": "Ethics / authorized banner plaque authority"
+    },
+    "foreground": {
+      "token": "paper-gray",
+      "hex": "#D7DDE6",
+      "usage": "Body ink; drives $text on dark"
+    },
+    "surface": {
+      "token": "bench-iron",
+      "hex": "#1B222C",
+      "usage": "Status box, panel fills"
+    },
+    "panel": {
+      "token": "bench-iron",
+      "hex": "#1B222C",
+      "usage": "Raised panel chrome"
+    },
+    "background": {
+      "token": "night-slate",
+      "hex": "#12161C",
+      "usage": "Screen canvas"
+    },
+    "error": {
+      "token": "seal-red",
+      "hex": "#B54A4A",
+      "usage": "Hard errors"
+    },
+    "warning": {
+      "token": "amber-key",
+      "hex": "#C9893A",
+      "usage": "Warnings"
+    },
+    "success": {
+      "token": "oil-green",
+      "hex": "#5F8F6B",
+      "usage": "Successful unlock / OK"
+    },
+    "dark": true
+  },
+  "css_only": {
+    "comment": "Not Theme(...) kwargs - use CSS variables or classes",
+    "raised": {
+      "token": "drawer",
+      "hex": "#252E3A",
+      "usage": "Input fill; optional nested panel alternative"
+    },
+    "hairline": {
+      "token": "cold-seam",
+      "hex": "#3A4656",
+      "usage": "Border"
+    },
+    "mute": {
+      "token": "filing",
+      "hex": "#8B97A8",
+      "usage": "Secondary text"
+    }
+  },
+  "product": {
+    "name": "Dietrich",
+    "tagline": "the office picklock",
+    "subtitle": "the office picklock - authorized use only"
+  }
+}

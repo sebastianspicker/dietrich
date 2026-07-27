@@ -1,0 +1,66 @@
+/* Protection dossier (status panel) + semantic state borders. */
+
+#status-panel {
+    height: auto;
+    min-height: 7;
+    max-height: 12;
+    margin: 1 0;
+    padding: 1 2;
+    background: #1B222C;
+    border: solid #4F7CAC;
+}
+
+#status-header {
+    height: 2;
+}
+
+#status-heading {
+    width: 1fr;
+    color: #4F7CAC;
+    text-style: bold;
+}
+
+#status-meta {
+    width: 22;
+    height: 2;
+    color: #8B97A8;
+    content-align: right top;
+}
+
+#status {
+    height: auto;
+    color: #D7DDE6;
+}
+
+/* Border and heading color reinforce the dossier state. */
+#status-panel.-status-info {
+    border: solid #4F7CAC;
+}
+
+#status-panel.-status-info #status-heading {
+    color: #4F7CAC;
+}
+
+#status-panel.-status-ok {
+    border: solid #C4A35A;
+}
+
+#status-panel.-status-ok #status-heading {
+    color: #C4A35A;
+}
+
+#status-panel.-status-warning {
+    border: solid #C9893A;
+}
+
+#status-panel.-status-warning #status-heading {
+    color: #C9893A;
+}
+
+#status-panel.-status-error {
+    border: solid #B54A4A;
+}
+
+#status-panel.-status-error #status-heading {
+    color: #B54A4A;
+}
