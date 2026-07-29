@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import re
 import shutil
-import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from dietrich.errors import EncryptedDocumentError, MissingDependencyError, PasswordNotFoundError
+from dietrich.process import run_argv_sync
 
 
 @dataclass(frozen=True)
@@ -143,8 +143,8 @@ def _wordlist_path(wordlist: Path) -> str:
 def _run_hashcat(command: list[str], timeout: int | None):
     """Run controlled hashcat argv and translate launch failures."""
     try:
-        return subprocess.run(command, check=False, capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired as exc:
+        return run_argv_sync(command, timeout=timeout)
+    except TimeoutError as exc:
         raise PasswordNotFoundError(
             f"hashcat timed out after {timeout}s without finding a password"
         ) from exc

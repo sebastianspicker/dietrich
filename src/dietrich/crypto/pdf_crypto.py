@@ -7,10 +7,10 @@ on user-password crypto and hash export routing.
 from __future__ import annotations
 
 import shutil
-import subprocess
 from pathlib import Path
 
 from dietrich.errors import EncryptedDocumentError, MissingDependencyError
+from dietrich.process import run_argv_sync
 
 
 def _require_pikepdf():
@@ -79,10 +79,8 @@ def _pdf2john_hash_line(path: Path, fmt: str) -> str | None:
     if executable is None:
         return None
     try:
-        process = subprocess.run(
-            [executable, str(path)], check=False, capture_output=True, text=True, timeout=60
-        )
-    except (OSError, subprocess.TimeoutExpired):
+        process = run_argv_sync([executable, str(path)], timeout=60)
+    except (OSError, TimeoutError):
         return None
     return _normalize_pdf2john_output(process.stdout or "", fmt)
 

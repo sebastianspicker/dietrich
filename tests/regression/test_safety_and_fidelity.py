@@ -130,6 +130,7 @@ def test_hashcat_mask_wired_to_attack_mode_3(monkeypatch: pytest.MonkeyPatch) ->
 def test_hashcat_mask_builds_a3_command(monkeypatch: pytest.MonkeyPatch) -> None:
     """run_hashcat_for_office with mask must put -a 3 and mask in the command."""
     from dietrich.crypto import hashcat_runner
+    from dietrich.process import ProcessResult
 
     monkeypatch.setattr(hashcat_runner, "find_hashcat", lambda: "/usr/bin/hashcat")
     captured_cmd: list = []
@@ -137,14 +138,9 @@ def test_hashcat_mask_builds_a3_command(monkeypatch: pytest.MonkeyPatch) -> None
     def fake_run(cmd, **_kwargs):
         captured_cmd.append(list(cmd))
 
-        class P:
-            returncode = 1
-            stdout = ""
-            stderr = ""
+        return ProcessResult(returncode=1, stdout="", stderr="")
 
-        return P()
-
-    monkeypatch.setattr(hashcat_runner.subprocess, "run", fake_run)
+    monkeypatch.setattr(hashcat_runner, "run_argv_sync", fake_run)
     hashcat_runner.run_hashcat_for_office(
         "$office$201310000025616aabb*ccdddddddddddddddddddddddddddddddd",
         mode=9600,
