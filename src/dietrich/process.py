@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
+import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from os import PathLike
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -17,15 +20,10 @@ class ProcessResult:
     stderr: str
 
 
-async def run_argv(
-    argv: Sequence[str | PathLike[str]], *, timeout: float | None = None
+async def capture_process(
+    process: asyncio.subprocess.Process, *, timeout: float | None = None
 ) -> ProcessResult:
-    """Run argv without a shell, capturing text and reaping timed-out children."""
-    process = await asyncio.create_subprocess_exec(
-        *(str(argument) for argument in argv),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+    """Capture a child process, killing and reaping it if its timeout expires."""
     try:
         if timeout is None:
             stdout, stderr = await process.communicate()
@@ -45,8 +43,47 @@ async def run_argv(
     )
 
 
-def run_argv_sync(
+async def run_hashcat_argv(
     argv: Sequence[str | PathLike[str]], *, timeout: float | None = None
 ) -> ProcessResult:
-    """Run :func:`run_argv` from the synchronous crypto call paths."""
-    return asyncio.run(run_argv(argv, timeout=timeout))
+    """Run a validated hashcat command with its literal ``-m`` argument."""
+    if len(argv) < 2 or str(argv[1]) != "-m":
+        raise ValueError("hashcat argv must begin with an executable followed by '-m'")
+    process = await asyncio.create_subprocess_exec(
+        str(argv[0]),
+        "-m",
+        *(str(argument) for argument in argv[2:]),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    return await capture_process(process, timeout=timeout)
+
+
+def run_hashcat_argv_sync(
+    argv: Sequence[str | PathLike[str]], *, timeout: float | None = None
+) -> ProcessResult:
+    """Run :func:`run_hashcat_argv` from the synchronous crypto call path."""
+    return asyncio.run(run_hashcat_argv(argv, timeout=timeout))
+
+
+async def run_pdf2john(
+    executable: str | PathLike[str], source: str | PathLike[str], *, timeout: float | None = None
+) -> ProcessResult:
+    """Run pdf2john against a fixed temporary filename rather than user input."""
+    with tempfile.TemporaryDirectory(prefix="dietrich-pdf2john-") as directory:
+        shutil.copyfile(source, Path(directory) / "input.pdf")
+        process = await asyncio.create_subprocess_exec(
+            str(executable),
+            "input.pdf",
+            cwd=directory,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        return await capture_process(process, timeout=timeout)
+
+
+def run_pdf2john_sync(
+    executable: str | PathLike[str], source: str | PathLike[str], *, timeout: float | None = None
+) -> ProcessResult:
+    """Run :func:`run_pdf2john` from the synchronous PDF hash-export path."""
+    return asyncio.run(run_pdf2john(executable, source, timeout=timeout))

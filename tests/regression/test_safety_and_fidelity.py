@@ -140,7 +140,7 @@ def test_hashcat_mask_builds_a3_command(monkeypatch: pytest.MonkeyPatch) -> None
 
         return ProcessResult(returncode=1, stdout="", stderr="")
 
-    monkeypatch.setattr(hashcat_runner, "run_argv_sync", fake_run)
+    monkeypatch.setattr(hashcat_runner, "run_hashcat_argv_sync", fake_run)
     hashcat_runner.run_hashcat_for_office(
         "$office$201310000025616aabb*ccdddddddddddddddddddddddddddddddd",
         mode=9600,

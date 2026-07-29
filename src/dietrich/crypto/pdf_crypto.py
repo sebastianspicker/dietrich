@@ -10,7 +10,7 @@ import shutil
 from pathlib import Path
 
 from dietrich.errors import EncryptedDocumentError, MissingDependencyError
-from dietrich.process import run_argv_sync
+from dietrich.process import run_pdf2john_sync
 
 
 def _require_pikepdf():
@@ -79,7 +79,7 @@ def _pdf2john_hash_line(path: Path, fmt: str) -> str | None:
     if executable is None:
         return None
     try:
-        process = run_argv_sync([executable, str(path)], timeout=60)
+        process = run_pdf2john_sync(executable, path, timeout=60)
     except (OSError, TimeoutError):
         return None
     return _normalize_pdf2john_output(process.stdout or "", fmt)
