@@ -21,7 +21,7 @@ from textual.widgets.option_list import Option
 
 from dietrich.brand import PRODUCT_NAME, SUBTITLE
 from dietrich.dispatch import export_document_hash, inspect_document, unlock_document
-from dietrich.errors import DietrichError, MissingDependencyError
+from dietrich.errors import DietrichError
 from dietrich.tui.compose import compose_app
 from dietrich.tui.dossier import (
     DossierView,
@@ -286,7 +286,7 @@ class DietrichApp(App[None]):
         except DietrichError as exc:
             self.call_from_thread(self._inspect_failed, str(exc))
             return
-        except Exception as exc:  # noqa: BLE001 - surface unexpected errors in UI
+        except Exception as exc:
             self.call_from_thread(self._inspect_failed, f"unexpected: {exc}")
             return
         self.call_from_thread(self._inspect_ok, inspection)
@@ -345,7 +345,7 @@ class DietrichApp(App[None]):
         except DietrichError as exc:
             self.call_from_thread(self._unlock_failed, str(exc))
             return
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.call_from_thread(self._unlock_failed, f"unexpected: {exc}")
             return
         self.call_from_thread(self._unlock_ok, result)
@@ -384,7 +384,7 @@ class DietrichApp(App[None]):
         except DietrichError as exc:
             self.call_from_thread(self._export_done, f"export-hash error: {exc}")
             return
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.call_from_thread(self._export_done, f"export-hash unexpected: {exc}")
             return
         display = line if len(line) <= 160 else line[:140] + "…"
@@ -398,13 +398,6 @@ class DietrichApp(App[None]):
 
 def run_tui(initial_path: str | Path | None = None) -> int:
     """Launch the Textual TUI; return process exit code."""
-    try:
-        import textual  # noqa: F401
-    except ImportError as exc:
-        raise MissingDependencyError(
-            "Terminal UI requires Textual. Install with: pip install 'dietrich[ui]'"
-        ) from exc
-
     app = DietrichApp(initial_path=initial_path)
     app.run()
     return 0

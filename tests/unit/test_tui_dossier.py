@@ -28,7 +28,7 @@ def test_empty_dossier() -> None:
     assert "Inspect" in view.lede
     assert view.state == "info"
     assert "IRM GATE  ACTIVE" in view.metadata
-    assert view.findings == ()
+    assert not view.findings
 
 
 def test_error_and_busy_dossier() -> None:

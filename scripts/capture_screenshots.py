@@ -81,52 +81,51 @@ async def _capture_tui_screens(protected: Path) -> list[Path]:
     tui_app.datetime = CaptureDateTime
     written: list[Path] = []
     try:
-        empty_app = tui_app.DietrichApp()
-        async with empty_app.run_test(size=(140, 40)) as pilot:
-            await _wait_for_tui(empty_app, pilot)
-            written.append(
-                Path(empty_app.save_screenshot(filename="werkbank-tui-chrome.svg", path=str(SHOTS)))
-            )
-
-        inspected_app = tui_app.DietrichApp(initial_path=protected)
-        async with inspected_app.run_test(size=(160, 50)) as pilot:
-            await _wait_for_tui(inspected_app, pilot)
-            inspected_app.query_one("#input-path", Input).value = "examples/out/protected.xlsx"
-            inspected_app.query_one(
-                "#output-path", Input
-            ).value = "examples/out/protected_unprotected.xlsx"
-            await pilot.pause(0.05)
-            written.append(
-                Path(
-                    inspected_app.save_screenshot(
-                        filename="werkbank-tui-smoke.svg", path=str(SHOTS)
-                    )
-                )
-            )
-
-        encrypted_app = tui_app.DietrichApp(initial_path=ENCRYPTED_XLSX)
-        async with encrypted_app.run_test(size=(160, 50)) as pilot:
-            await _wait_for_tui(encrypted_app, pilot)
-            encrypted_app.action_export_hash()
-            await _wait_for_tui(encrypted_app, pilot)
-            encrypted_app.query_one("#input-path", Input).value = "examples/out/encrypted.xlsx"
-            encrypted_app.query_one(
-                "#output-path", Input
-            ).value = "examples/out/encrypted_unprotected.xlsx"
-            await pilot.pause(0.05)
-            written.append(
-                Path(
-                    encrypted_app.save_screenshot(
-                        filename="werkbank-tui-smoke-export.svg", path=str(SHOTS)
-                    )
-                )
-            )
+        written.append(await _capture_empty_tui(tui_app))
+        written.append(await _capture_inspected_tui(tui_app, Input, protected))
+        written.append(await _capture_encrypted_tui(tui_app, Input))
     finally:
         tui_app.datetime = original_datetime
     for path in written:
         _strip_renderer_comment(path)
         print(f"wrote {path.relative_to(ROOT)} ({path.stat().st_size} bytes)")
     return written
+
+
+async def _capture_empty_tui(tui_app) -> Path:
+    """Capture the deterministic empty terminal UI state."""
+    app = tui_app.DietrichApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await _wait_for_tui(app, pilot)
+        return Path(app.save_screenshot(filename="werkbank-tui-chrome.svg", path=str(SHOTS)))
+
+
+async def _capture_inspected_tui(tui_app, input_widget, protected: Path) -> Path:
+    """Capture the protected-workbook inspection state."""
+    app = tui_app.DietrichApp(initial_path=protected)
+    async with app.run_test(size=(160, 50)) as pilot:
+        await _wait_for_tui(app, pilot)
+        app.query_one("#input-path", input_widget).value = "examples/out/protected.xlsx"
+        app.query_one("#output-path", input_widget).value = (
+            "examples/out/protected_unprotected.xlsx"
+        )
+        await pilot.pause(0.05)
+        return Path(app.save_screenshot(filename="werkbank-tui-smoke.svg", path=str(SHOTS)))
+
+
+async def _capture_encrypted_tui(tui_app, input_widget) -> Path:
+    """Capture the encrypted-workbook state after a real hash export."""
+    app = tui_app.DietrichApp(initial_path=ENCRYPTED_XLSX)
+    async with app.run_test(size=(160, 50)) as pilot:
+        await _wait_for_tui(app, pilot)
+        app.action_export_hash()
+        await _wait_for_tui(app, pilot)
+        app.query_one("#input-path", input_widget).value = "examples/out/encrypted.xlsx"
+        app.query_one("#output-path", input_widget).value = (
+            "examples/out/encrypted_unprotected.xlsx"
+        )
+        await pilot.pause(0.05)
+        return Path(app.save_screenshot(filename="werkbank-tui-smoke-export.svg", path=str(SHOTS)))
 
 
 def capture_tui_screens(protected: Path) -> list[Path]:
@@ -142,156 +141,23 @@ def capture_tui_screens(protected: Path) -> list[Path]:
 def capture_all() -> list[Path]:
     """Run demo CLI commands and write normalized text captures under docs/screenshots/."""
     SHOTS.mkdir(parents=True, exist_ok=True)
-    written: list[Path] = []
-
-    # 01 help
-    help_proc = run_dietrich("--help")
-    written.append(_write("01-help.txt", normalize_capture(help_proc.stdout)))
-
+    written = _capture_help()
     work = Path(tempfile.mkdtemp(prefix="dietrich-shots-"))
     try:
-        # 02 inspect encrypted
-        if ENCRYPTED_XLSX.is_file():
-            insp = run_dietrich(str(ENCRYPTED_XLSX), "--inspect")
-            written.append(
-                _write(
-                    "02-inspect-encrypted.txt",
-                    normalize_capture(insp.stdout, display_name="secret.xlsx"),
-                )
-            )
-
-        # 03 soft xlsx
-        soft = protected_xlsx(work / "protected.xlsx")
-        out_soft = work / "protected_unprotected.xlsx"
-        soft_run = run_dietrich(str(soft), "--output", str(out_soft))
-        combined = soft_run.stdout
-        if soft_run.stderr:
-            combined = soft_run.stdout + soft_run.stderr
-        written.append(
-            _write(
-                "03-soft-xlsx.txt",
-                normalize_capture(combined, display_name="protected_unprotected.xlsx"),
-            )
-        )
-
-        # 04 binary soft
-        if PLAIN_XLS.is_file():
-            out_bin = work / "plain_unprotected.xls"
-            bin_run = run_dietrich(str(PLAIN_XLS), "--output", str(out_bin))
-            written.append(
-                _write(
-                    "04-soft-binary.txt",
-                    normalize_capture(bin_run.stdout, display_name="plain_unprotected.xls"),
-                )
-            )
-
-        # 05 password unlock
-        if ENCRYPTED_XLSX.is_file():
-            out_pw = work / "secret_unprotected.xlsx"
-            pw_run = run_dietrich(
-                str(ENCRYPTED_XLSX),
-                "--password",
-                KNOWN_PASSWORD,
-                "--output",
-                str(out_pw),
-            )
-            written.append(
-                _write(
-                    "05-password-unlock.txt",
-                    normalize_capture(pw_run.stdout, display_name="secret_unprotected.xlsx"),
-                )
-            )
-
-            # 06 export hash (truncate long line)
-            hash_run = run_dietrich(str(ENCRYPTED_XLSX), "--export-hash", "hashcat")
-            line = hash_run.stdout.strip()
-            if len(line) > 120:
-                line = line[:100] + "…"
-            written.append(_write("06-export-hash.txt", line + "\n"))
-
-            # 10 soft-only error
-            soft_only = run_dietrich(
-                str(ENCRYPTED_XLSX),
-                "--soft-only",
-                "--output",
-                str(work / "nope.xlsx"),
-            )
-            err = soft_only.stderr.strip() or soft_only.stdout.strip()
-            written.append(
-                _write(
-                    "10-soft-only-error.txt",
-                    normalize_capture(err + "\n"),
-                )
-            )
-
-        # 07 PDF permissions
-        try:
-            pdf = make_restricted_pdf(work / "restricted.pdf")
-            out_pdf = work / "restricted_unprotected.pdf"
-            pdf_run = run_dietrich(str(pdf), "--output", str(out_pdf))
-            written.append(
-                _write(
-                    "07-pdf-permissions.txt",
-                    normalize_capture(
-                        pdf_run.stdout,
-                        display_name="restricted_unprotected.pdf",
-                    ),
-                )
-            )
-        except Exception as exc:  # pikepdf missing
-            written.append(
-                _write(
-                    "07-pdf-permissions.txt",
-                    f"(skipped: PDF demo requires pikepdf: {exc})\n",
-                )
-            )
-
-        # 08 JSON inspect
-        soft2 = protected_xlsx(work / "json.xlsx")
-        js = run_dietrich(str(soft2), "--inspect", "--json")
-        # normalize path inside JSON manually
-        body = js.stdout
-        body = body.replace(str(soft2), "protected.xlsx")
-        written.append(_write("08-json-inspect.txt", normalize_capture(body)))
-
-        # 09 worksheets-only soft unlock
-        soft3 = protected_xlsx(work / "sheets_only.xlsx")
-        out_ws = work / "sheets_only_out.xlsx"
-        ws_run = run_dietrich(str(soft3), "--worksheets-only", "--output", str(out_ws))
-        written.append(
-            _write(
-                "09-worksheets-only.txt",
-                normalize_capture(ws_run.stdout, display_name="sheets_only_out.xlsx"),
-            )
-        )
-
-        # 11 strip signatures
-        signed = write_signed_xlsx(work / "signed.xlsx")
-        blocked = run_dietrich(str(signed), "--output", str(work / "blocked.xlsx"))
-        stripped = run_dietrich(
-            str(signed),
-            "--strip-signatures",
-            "--output",
-            str(work / "unsigned.xlsx"),
-            "--force",
-        )
-        block_msg = (blocked.stderr or blocked.stdout).strip()
-        strip_out = stripped.stdout.strip()
-        text = (
-            "# Without --strip-signatures (fails):\n"
-            f"{block_msg}\n\n"
-            "# With --strip-signatures --force:\n"
-            f"{normalize_capture(strip_out, display_name='unsigned.xlsx').rstrip()}\n"
-        )
-        written.append(_write("11-strip-signatures.txt", text))
-
+        written.extend(_capture_cli_groups(work))
+        soft = work / "protected.xlsx"
         written.extend(capture_tui_screens(soft))
 
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
-    # README index.
-    readme = """# Command and terminal captures
+    written.append(_write("README.md", _capture_readme()))
+    return written
+
+
+def _capture_readme() -> str:
+    """Return the deterministic capture index."""
+    return """# Command and terminal captures
 
 Refresh the command text and Textual SVG files with:
 
@@ -339,8 +205,116 @@ check.
 
 Captured paths do not contain machine-local absolute paths.
 """
-    written.append(_write("README.md", readme))
+
+
+def _capture_help() -> list[Path]:
+    """Capture the help output."""
+    return [_write("01-help.txt", normalize_capture(run_dietrich("--help").stdout))]
+
+
+def _capture_cli_groups(work: Path) -> list[Path]:
+    """Capture CLI examples in their documented order."""
+    written = _capture_inspect_and_soft(work)
+    written.extend(_capture_password_group(work))
+    written.extend(_capture_pdf_and_json(work))
+    written.append(_capture_signed(work))
     return written
+
+
+def _capture_inspect_and_soft(work: Path) -> list[Path]:
+    """Capture encrypted inspection and soft unlock examples."""
+    written: list[Path] = []
+    if ENCRYPTED_XLSX.is_file():
+        insp = run_dietrich(str(ENCRYPTED_XLSX), "--inspect")
+        written.append(_write(
+            "02-inspect-encrypted.txt", normalize_capture(insp.stdout, display_name="secret.xlsx")
+        ))
+    soft = protected_xlsx(work / "protected.xlsx")
+    out_soft = work / "protected_unprotected.xlsx"
+    soft_run = run_dietrich(str(soft), "--output", str(out_soft))
+    combined = soft_run.stdout + soft_run.stderr if soft_run.stderr else soft_run.stdout
+    written.append(_write(
+        "03-soft-xlsx.txt", normalize_capture(combined, display_name="protected_unprotected.xlsx")
+    ))
+    if PLAIN_XLS.is_file():
+        out_bin = work / "plain_unprotected.xls"
+        bin_run = run_dietrich(str(PLAIN_XLS), "--output", str(out_bin))
+        written.append(_write(
+            "04-soft-binary.txt",
+            normalize_capture(bin_run.stdout, display_name="plain_unprotected.xls"),
+        ))
+    return written
+
+
+def _capture_password_group(work: Path) -> list[Path]:
+    """Capture password, hash export, and soft-only examples."""
+    if not ENCRYPTED_XLSX.is_file():
+        return []
+    out_pw = work / "secret_unprotected.xlsx"
+    pw_run = run_dietrich(
+        str(ENCRYPTED_XLSX), "--password", KNOWN_PASSWORD, "--output", str(out_pw)
+    )
+    written = [_write(
+        "05-password-unlock.txt",
+        normalize_capture(pw_run.stdout, display_name="secret_unprotected.xlsx"),
+    )]
+    line = run_dietrich(str(ENCRYPTED_XLSX), "--export-hash", "hashcat").stdout.strip()
+    if len(line) > 120:
+        line = line[:100] + "…"
+    written.append(_write("06-export-hash.txt", line + "\n"))
+    soft_only = run_dietrich(
+        str(ENCRYPTED_XLSX), "--soft-only", "--output", str(work / "nope.xlsx")
+    )
+    err = soft_only.stderr.strip() or soft_only.stdout.strip()
+    written.append(_write("10-soft-only-error.txt", normalize_capture(err + "\n")))
+    return written
+
+
+def _capture_pdf_and_json(work: Path) -> list[Path]:
+    """Capture PDF, JSON inspection, and worksheet-only examples."""
+    try:
+        pdf = make_restricted_pdf(work / "restricted.pdf")
+        out_pdf = work / "restricted_unprotected.pdf"
+        pdf_run = run_dietrich(str(pdf), "--output", str(out_pdf))
+        written = [_write(
+            "07-pdf-permissions.txt",
+            normalize_capture(pdf_run.stdout, display_name="restricted_unprotected.pdf"),
+        )]
+    except ModuleNotFoundError as exc:
+        if exc.name != "pikepdf":
+            raise
+        written = [_write(
+            "07-pdf-permissions.txt", f"(skipped: PDF demo requires pikepdf: {exc})\n"
+        )]
+    soft2 = protected_xlsx(work / "json.xlsx")
+    body = run_dietrich(str(soft2), "--inspect", "--json").stdout.replace(
+        str(soft2), "protected.xlsx"
+    )
+    written.append(_write("08-json-inspect.txt", normalize_capture(body)))
+    soft3 = protected_xlsx(work / "sheets_only.xlsx")
+    out_ws = work / "sheets_only_out.xlsx"
+    ws_run = run_dietrich(str(soft3), "--worksheets-only", "--output", str(out_ws))
+    written.append(_write(
+        "09-worksheets-only.txt",
+        normalize_capture(ws_run.stdout, display_name="sheets_only_out.xlsx"),
+    ))
+    return written
+
+
+def _capture_signed(work: Path) -> Path:
+    """Capture signature rejection and explicit stripping."""
+    signed = write_signed_xlsx(work / "signed.xlsx")
+    blocked = run_dietrich(str(signed), "--output", str(work / "blocked.xlsx"))
+    stripped = run_dietrich(
+        str(signed), "--strip-signatures", "--output", str(work / "unsigned.xlsx"), "--force"
+    )
+    text = (
+        "# Without --strip-signatures (fails):\n"
+        f"{(blocked.stderr or blocked.stdout).strip()}\n\n"
+        "# With --strip-signatures --force:\n"
+        f"{normalize_capture(stripped.stdout.strip(), display_name='unsigned.xlsx').rstrip()}\n"
+    )
+    return _write("11-strip-signatures.txt", text)
 
 
 def check_captures() -> int:
