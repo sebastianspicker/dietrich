@@ -28,6 +28,15 @@ class HashcatRunResult:
     message: str
 
 
+@dataclass(frozen=True)
+class _HashcatFiles:
+    """Temporary and persistent file locations used by one hashcat invocation."""
+
+    pot: Path
+    output: Path
+    hash_input: Path
+
+
 def find_hashcat() -> str:
     """Return path to hashcat on PATH or raise MissingDependencyError."""
     for name in ("hashcat", "hashcat.bin"):
@@ -72,98 +81,95 @@ def run_hashcat_for_office(
 
     with tempfile.TemporaryDirectory(prefix="dietrich-hashcat-") as tmp:
         tmp_path = Path(tmp)
-        hash_file = tmp_path / "hash.txt"
         body = normalize_hash_body(hash_line)
-        hash_file.write_text(body + "\n", encoding="utf-8")
-
+        hash_file = _write_hash_file(tmp_path, body)
         out_file = tmp_path / "cracked.txt"
-        pot = potfile or (tmp_path / "potfile")
+        pot = potfile or tmp_path / "potfile"
+        files = _HashcatFiles(pot=pot, output=out_file, hash_input=hash_file)
+        command = _hashcat_command(hashcat, mode, wordlist, mask, workload, files, extra_args)
+        process = _run_hashcat(command, timeout)
+        return _hashcat_result(process, command, out_file, pot, body, mode)
 
-        if wordlist is not None and mask:
-            raise EncryptedDocumentError(
-                "pass either --wordlist or --mask with --hashcat, not both"
-            )
 
-        if mask:
-            # Mask attack (-a 3)
-            cmd = [
-                hashcat,
-                "-m",
-                str(mode),
-                "-a",
-                "3",
-                "-w",
-                workload,
-                "--potfile-path",
-                str(pot),
-                "-o",
-                str(out_file),
-                "--outfile-format",
-                "2",
-                str(hash_file),
-                mask,
-            ]
-        else:
-            # Dictionary attack (-a 0); wordlist optional if extra_args supplies attack
-            cmd = [
-                hashcat,
-                "-m",
-                str(mode),
-                "-a",
-                "0",
-                "-w",
-                workload,
-                "--potfile-path",
-                str(pot),
-                "-o",
-                str(out_file),
-                "--outfile-format",
-                "2",
-                str(hash_file),
-            ]
-            if wordlist is not None:
-                wl = Path(wordlist)
-                if not wl.is_file():
-                    raise EncryptedDocumentError(f"wordlist not found: {wl}")
-                cmd.append(str(wl))
+def _write_hash_file(directory: Path, body: str) -> Path:
+    """Write one normalized hash line to hashcat's temporary input file."""
+    path = directory / "hash.txt"
+    path.write_text(body + "\n", encoding="utf-8")
+    return path
 
-        cmd.extend(extra_args)
 
-        try:
-            proc = subprocess.run(
-                cmd,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise PasswordNotFoundError(
-                f"hashcat timed out after {timeout}s without finding a password"
-            ) from exc
-        except OSError as exc:
-            raise MissingDependencyError(f"failed to execute hashcat: {exc}") from exc
+def _hashcat_command(
+    hashcat: str, mode: int, wordlist: Path | None, mask: str | None, workload: str,
+    files: _HashcatFiles, extra_args: list[str],
+) -> list[str]:
+    """Build a shell-free hashcat argv for a dictionary or mask attack."""
+    if wordlist is not None and mask:
+        raise EncryptedDocumentError("pass either --wordlist or --mask with --hashcat, not both")
+    command = _hashcat_base_command(
+        hashcat, mode, workload, files.pot, files.output, files.hash_input, mask is not None
+    )
+    if mask:
+        command.append(mask)
+    elif wordlist is not None:
+        command.append(_wordlist_path(wordlist))
+    command.extend(extra_args)
+    return command
 
-        combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
-        password = _read_cracked_password(out_file, pot, body)
-        if password is not None:
-            return HashcatRunResult(
-                success=True,
-                password=password,
-                mode=mode,
-                command=tuple(cmd),
-                stdout_tail=combined[-2000:],
-                message="password found via hashcat",
-            )
 
+def _hashcat_base_command(
+    hashcat: str,
+    mode: int,
+    workload: str,
+    pot: Path,
+    out_file: Path,
+    hash_file: Path,
+    is_mask: bool,
+) -> list[str]:
+    """Create common argv fields while varying only hashcat's attack-mode value."""
+    return [
+        hashcat, "-m", str(mode), "-a", "3" if is_mask else "0", "-w", workload,
+        "--potfile-path", str(pot), "-o", str(out_file), "--outfile-format", "2", str(hash_file),
+    ]
+
+
+def _wordlist_path(wordlist: Path) -> str:
+    """Validate and stringify a user-provided dictionary file."""
+    path = Path(wordlist)
+    if not path.is_file():
+        raise EncryptedDocumentError(f"wordlist not found: {path}")
+    return str(path)
+
+
+def _run_hashcat(command: list[str], timeout: int | None):
+    """Run controlled hashcat argv and translate launch failures."""
+    try:
+        return subprocess.run(command, check=False, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise PasswordNotFoundError(
+            f"hashcat timed out after {timeout}s without finding a password"
+        ) from exc
+    except OSError as exc:
+        raise MissingDependencyError(f"failed to execute hashcat: {exc}") from exc
+
+
+def _hashcat_result(
+    process, command: list[str], out_file: Path, pot: Path, body: str, mode: int
+) -> HashcatRunResult:
+    """Return a common result record after checking temporary outputs for a password."""
+    output = ((process.stdout or "") + "\n" + (process.stderr or ""))[-2000:]
+    password = _read_cracked_password(out_file, pot, body)
+    if password is not None:
         return HashcatRunResult(
-            success=False,
-            password=None,
-            mode=mode,
-            command=tuple(cmd),
-            stdout_tail=combined[-2000:],
-            message=f"hashcat did not crack the hash (exit {proc.returncode})",
+            True, password, mode, tuple(command), output, "password found via hashcat"
         )
+    return HashcatRunResult(
+        False,
+        None,
+        mode,
+        tuple(command),
+        output,
+        f"hashcat did not crack the hash (exit {process.returncode})",
+    )
 
 
 def _hash_bodies_match(pot_hash: str, expected_body: str) -> bool:
@@ -183,41 +189,59 @@ def _hash_bodies_match(pot_hash: str, expected_body: str) -> bool:
 def _read_cracked_password(out_file: Path, pot: Path, hash_body: str) -> str | None:
     """Parse potfile/outfile for an exact hash body match."""
     expected = normalize_hash_body(hash_body)
-    if out_file.is_file():
-        text = out_file.read_text(encoding="utf-8", errors="ignore")
-        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-        if lines:
-            line = lines[-1]
-            # outfile-format 2 = password only
-            # format 3 / pot-like: hash:password - only accept if hash matches
-            if ":" in line and (line.startswith("$") or ":$" in line):
-                h, _, pw = line.partition(":")
-                if _hash_bodies_match(h, expected):
-                    return pw
-                # If left side is not a hash (plain password containing colon), take whole
-                if not line.startswith("$") and ":$" not in line:
-                    return line
-                return None
-            return line
-    if pot.is_file():
-        for line in pot.read_text(encoding="utf-8", errors="ignore").splitlines():
-            line = line.strip()
-            if not line or ":" not in line:
-                continue
-            # potfile: hash:password (hash may contain ':' in rare formats - use rsplit once
-            # from first colon after hash markers is fragile; standard is hash:pass with hash
-            # containing no unescaped colon for office/pdf.)
-            h, _, pw = line.partition(":")
-            if _hash_bodies_match(h, expected):
-                return pw
-            # name:$office$...:password (hash itself has no colons)
-            dollar = line.find("$")
-            last_colon = line.rfind(":")
-            if dollar >= 0 and last_colon > dollar:
-                h2 = line[dollar:last_colon]
-                pw2 = line[last_colon + 1 :]
-                if _hash_bodies_match(h2, expected):
-                    return pw2
+    return _outfile_password(out_file, expected) or _potfile_password(pot, expected)
+
+
+def _outfile_password(out_file: Path, expected: str) -> str | None:
+    """Read the final hashcat outfile entry, preserving password-only output."""
+    if not out_file.is_file():
+        return None
+    text = out_file.read_text(encoding="utf-8", errors="ignore")
+    lines = [line.strip() for line in text.splitlines()]
+    line = next((line for line in reversed(lines) if line), None)
+    if line is None or not _looks_like_hash_password(line):
+        return line
+    hashed, _, password = line.partition(":")
+    return password if _hash_bodies_match(hashed, expected) else None
+
+
+def _looks_like_hash_password(line: str) -> bool:
+    """Recognize hashcat's hash:password output rather than a plain password."""
+    return ":" in line and (line.startswith("$") or ":$" in line)
+
+
+def _potfile_password(pot: Path, expected: str) -> str | None:
+    """Return the first matching password from standard or filename-prefixed pot lines."""
+    if not pot.is_file():
+        return None
+    for raw_line in pot.read_text(encoding="utf-8", errors="ignore").splitlines():
+        password = _potfile_line_password(raw_line.strip(), expected)
+        if password is not None:
+            return password
+    return None
+
+
+def _potfile_line_password(line: str, expected: str) -> str | None:
+    """Match one potfile line against the expected Office or PDF hash body."""
+    if not line or ":" not in line:
+        return None
+    hashed, _, password = line.partition(":")
+    if _hash_bodies_match(hashed, expected):
+        return password
+    dollar = line.find("$")
+    last_colon = line.rfind(":")
+    if 0 <= dollar < last_colon:
+        return _password_after_prefixed_hash(line, dollar, last_colon, expected)
+    return None
+
+
+def _password_after_prefixed_hash(
+    line: str, dollar: int, last_colon: int, expected: str
+) -> str | None:
+    """Read a name:$hash$:password potfile line after exact hash validation."""
+    hashed = line[dollar:last_colon]
+    if _hash_bodies_match(hashed, expected):
+        return line[last_colon + 1 :]
     return None
 
 

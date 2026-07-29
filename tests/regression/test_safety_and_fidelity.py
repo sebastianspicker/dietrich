@@ -91,7 +91,7 @@ def test_hashcat_mask_wired_to_attack_mode_3(monkeypatch: pytest.MonkeyPatch) ->
 
     captured: dict = {}
 
-    def fake_run(hash_line, *, mode, wordlist=None, mask=None, extra_args=None, **_k):
+    def fake_run(_hash_line, *, mode, wordlist=None, mask=None, _extra_args=None, **_k):
         captured["mask"] = mask
         captured["wordlist"] = wordlist
         # Also spy real command builder path via run with mock find + subprocess
@@ -109,8 +109,6 @@ def test_hashcat_mask_wired_to_attack_mode_3(monkeypatch: pytest.MonkeyPatch) ->
 
     # Call through the real dispatch recovery path
     from dietrich.dispatch import _recover_via_hashcat
-    from dietrich.types import UnlockOptions
-
     enc = FIXTURES / "example_password.xlsx"
     if not enc.is_file():
         pytest.skip("encrypted fixture missing")
@@ -129,14 +127,14 @@ def test_hashcat_mask_wired_to_attack_mode_3(monkeypatch: pytest.MonkeyPatch) ->
     assert captured.get("wordlist") is None
 
 
-def test_hashcat_mask_builds_a3_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_hashcat_mask_builds_a3_command(monkeypatch: pytest.MonkeyPatch) -> None:
     """run_hashcat_for_office with mask must put -a 3 and mask in the command."""
     from dietrich.crypto import hashcat_runner
 
     monkeypatch.setattr(hashcat_runner, "find_hashcat", lambda: "/usr/bin/hashcat")
     captured_cmd: list = []
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd, **_kwargs):
         captured_cmd.append(list(cmd))
 
         class P:
@@ -308,8 +306,6 @@ def test_missing_wordlist_is_dietrich_error(tmp_path: Path) -> None:
 
 def test_irm_blocks_unlock_with_actionable_message(tmp_path: Path) -> None:
     """Synthetic IRM package part must not soft-unlock as ordinary OOXML."""
-    from dietrich.errors import EncryptedDocumentError
-
     src = tmp_path / "irm.xlsx"
     with zipfile.ZipFile(src, "w") as zf:
         zf.writestr("[Content_Types].xml", b"<Types/>")
@@ -339,7 +335,8 @@ def test_docsecurity_preserves_prefix_shape(tmp_path: Path) -> None:
     out = tmp_path / "out.xlsx"
     result = unlock_document(src, out, UnlockOptions())
     assert result.removed.mark_as_final >= 1
-    data = zipfile.ZipFile(out).read("docProps/app.xml")
+    with zipfile.ZipFile(out) as archive:
+        data = archive.read("docProps/app.xml")
     # Must not invent ns0: prefix rewrite for this simple case
     assert b"<DocSecurity>0</DocSecurity>" in data
     assert b"ns0:" not in data
