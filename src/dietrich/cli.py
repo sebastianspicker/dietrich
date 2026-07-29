@@ -31,78 +31,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Parse argv and run inspect/export/unlock; return process exit code."""
     parser = _build_parser()
     args = parser.parse_args(argv)
-
-    if getattr(args, "tui", False):
-        from dietrich.tui import run_tui
-
-        try:
-            return run_tui(initial_path=args.input)
-        except MissingDependencyError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 3
-
-    if getattr(args, "research_fuzz", False):
-        if not args.input:
-            parser.error("INPUT is required for --research-fuzz")
-        return _run_research_fuzz(args)
-
-    if not args.input:
-        parser.error("INPUT is required (or pass --tui for the terminal UI)")
-
-    input_path = Path(args.input)
-    output_path = Path(args.output) if args.output else _default_output_path(input_path)
-
     try:
-        if args.export_hash:
-            line = export_document_hash(input_path, args.export_hash)
-            print(line)
-            return 0
-
-        if args.inspect:
-            inspection = inspect_document(input_path)
-            if args.json:
-                print(json.dumps(_inspection_dict(inspection), indent=2, default=str))
-            else:
-                _print_inspection(inspection)
-            return 0
-
-        options = UnlockOptions(
-            remove_worksheet_protection=True,
-            remove_workbook_protection=not args.worksheets_only,
-            remove_document_protection=not args.keep_document_protection,
-            remove_modify_verifier=not args.keep_modify_verifier,
-            strip_pdf_permissions=True,
-            strip_signatures=args.strip_signatures,
-            unlock_vba=args.vba,
-            soft_only=args.soft_only,
-            password=args.password,
-            wordlist=Path(args.wordlist) if args.wordlist else None,
-            mask=args.mask,
-            charset=args.charset if args.brute or args.charset else None,
-            max_length=args.max_length,
-            max_candidates=args.max_candidates,
-            workers=max(1, args.workers),
-            overwrite=args.force,
-            resign_cert=Path(args.resign_cert) if args.resign_cert else None,
-            resign_key=Path(args.resign_key) if args.resign_key else None,
-            use_hashcat=args.hashcat,
-            hashcat_args=tuple(args.hashcat_arg or ()),
-            hashcat_timeout=args.hashcat_timeout,
-        )
-
-        if args.brute and not args.charset:
-            options = UnlockOptions(**{**options.__dict__, "charset": "digits"})
-            if options.max_length is None:
-                options = UnlockOptions(**{**options.__dict__, "max_length": 4})
-
-        if (options.resign_cert is None) ^ (options.resign_key is None):
-            print(
-                "error: --resign-cert and --resign-key must be provided together",
-                file=sys.stderr,
-            )
-            return 2
-
-        result = unlock_document(input_path, output_path, options)
+        return _execute_parsed_args(args, parser)
     except OutputExistsError as exc:
         print(f"error: {exc} Use --force to overwrite.", file=sys.stderr)
         return 2
@@ -116,11 +46,104 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    if args.json:
+
+def _execute_parsed_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """Route parsed flags to UI, research, or the ordinary document command."""
+    if getattr(args, "tui", False):
+        return _run_tui(args.input)
+    if getattr(args, "research_fuzz", False):
+        if not args.input:
+            parser.error("INPUT is required for --research-fuzz")
+        return _run_research_fuzz(args)
+    if not args.input:
+        parser.error("INPUT is required (or pass --tui for the terminal UI)")
+    return _run_document_command(args)
+
+
+
+def _run_tui(input_path: str | None) -> int:
+    """Launch the optional terminal UI with its established exit contract."""
+    from dietrich.tui import run_tui
+
+    try:
+        return run_tui(initial_path=input_path)
+    except MissingDependencyError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
+
+
+def _run_document_command(args: argparse.Namespace) -> int:
+    """Handle export, inspection, or unlock for a validated input path."""
+    input_path = Path(args.input)
+    if args.export_hash:
+        print(export_document_hash(input_path, args.export_hash))
+        return 0
+    if args.inspect:
+        _print_document_inspection(inspect_document(input_path), as_json=args.json)
+        return 0
+
+    output_path = Path(args.output) if args.output else _default_output_path(input_path)
+    options = _options_from_args(args)
+    if (options.resign_cert is None) ^ (options.resign_key is None):
+        print("error: --resign-cert and --resign-key must be provided together", file=sys.stderr)
+        return 2
+    result = unlock_document(input_path, output_path, options)
+    _print_unlock_result(result, as_json=args.json)
+    return 0
+
+
+def _options_from_args(args: argparse.Namespace) -> UnlockOptions:
+    """Translate parsed CLI flags into the public unlock options value."""
+    options = UnlockOptions(
+        remove_worksheet_protection=True,
+        remove_workbook_protection=not args.worksheets_only,
+        remove_document_protection=not args.keep_document_protection,
+        remove_modify_verifier=not args.keep_modify_verifier,
+        strip_pdf_permissions=True,
+        strip_signatures=args.strip_signatures,
+        unlock_vba=args.vba,
+        soft_only=args.soft_only,
+        password=args.password,
+        wordlist=Path(args.wordlist) if args.wordlist else None,
+        mask=args.mask,
+        charset=args.charset if args.brute or args.charset else None,
+        max_length=args.max_length,
+        max_candidates=args.max_candidates,
+        workers=max(1, args.workers),
+        overwrite=args.force,
+        resign_cert=Path(args.resign_cert) if args.resign_cert else None,
+        resign_key=Path(args.resign_key) if args.resign_key else None,
+        use_hashcat=args.hashcat,
+        hashcat_args=tuple(args.hashcat_arg or ()),
+        hashcat_timeout=args.hashcat_timeout,
+    )
+    return _with_default_brute_options(options, args)
+
+
+def _with_default_brute_options(options: UnlockOptions, args: argparse.Namespace) -> UnlockOptions:
+    """Apply the documented bounded brute-force defaults when requested."""
+    if not args.brute or args.charset:
+        return options
+    overrides = {"charset": "digits"}
+    if options.max_length is None:
+        overrides["max_length"] = 4
+    return UnlockOptions(**{**options.__dict__, **overrides})
+
+
+def _print_document_inspection(inspection: DocumentInspection, *, as_json: bool) -> None:
+    """Render inspection output in the requested established format."""
+    if as_json:
+        print(json.dumps(_inspection_dict(inspection), indent=2, default=str))
+    else:
+        _print_inspection(inspection)
+
+
+def _print_unlock_result(result: UnlockResult, *, as_json: bool) -> None:
+    """Render unlock output in the requested established format."""
+    if as_json:
         print(json.dumps(_result_dict(result), indent=2, default=str))
     else:
         _print_result(result)
-    return 0
 
 
 def _run_research_fuzz(args: argparse.Namespace) -> int:
@@ -144,6 +167,14 @@ def _build_parser() -> argparse.ArgumentParser:
         description=HELP_DESCRIPTION,
         epilog=HELP_EPILOG,
     )
+    _add_document_arguments(parser)
+    _add_recovery_arguments(parser)
+    _add_advanced_arguments(parser)
+    return parser
+
+
+def _add_document_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add input, UI, output, and soft-protection command flags."""
     parser.add_argument(
         "input",
         metavar="INPUT",
@@ -176,10 +207,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="PowerPoint: keep modifyVerifier",
     )
 
+
+
+def _add_recovery_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add open-password recovery and external hashcat command flags."""
     parser.add_argument(
-        "--soft-only",
-        action="store_true",
-        help="Never attempt open-password recovery",
+        "--soft-only", action="store_true", help="Never attempt open-password recovery"
     )
     parser.add_argument("--password", help="Password for open-encrypted documents")
     parser.add_argument("--wordlist", metavar="PATH", help="Password wordlist file")
@@ -223,6 +256,10 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Seconds before hashcat is aborted (default: no limit)",
     )
+
+
+def _add_advanced_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add signing, VBA, hash-export, and lab-only fuzzing command flags."""
     parser.add_argument(
         "--resign-cert",
         metavar="PEM",
@@ -265,7 +302,6 @@ def _build_parser() -> argparse.ArgumentParser:
         default=0,
         help="Experimental: RNG seed for --research-fuzz",
     )
-    return parser
 
 
 def _default_output_path(input_path: Path) -> Path:

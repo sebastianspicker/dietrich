@@ -64,18 +64,7 @@ def inspect_ooxml_package(path: Path, *, allow_signed: bool = False) -> Document
             signed = package_is_signed(names)
             vba = any(p in names for p in VBA_PROJECT_PATHS)
 
-            soft: list = []
-            strategies: list[str] = []
-            if fmt == DocumentFormat.EXCEL_OOXML:
-                soft.extend(excel.inspect_excel_parts(names, archive.read))
-                strategies.append("soft:sheetProtection")
-                strategies.append("soft:workbookProtection")
-            elif fmt == DocumentFormat.WORD_OOXML:
-                soft.extend(word.inspect_word_parts(names, archive.read))
-                strategies.append("soft:documentProtection")
-            elif fmt == DocumentFormat.POWERPOINT_OOXML:
-                soft.extend(powerpoint.inspect_powerpoint_parts(names, archive.read))
-                strategies.append("soft:modifyVerifier")
+            soft, strategies = _inspect_format_parts(fmt, names, archive.read)
             soft.extend(props.inspect_props_parts(names, archive.read))
             if signed:
                 strategies.append("signature:strip")
@@ -107,6 +96,28 @@ def inspect_ooxml_package(path: Path, *, allow_signed: bool = False) -> Document
         raise InvalidDocumentError(f"{input_path} could not be read: {exc}") from exc
 
 
+def _inspect_format_parts(
+    fmt: DocumentFormat, names: list[str], read: Callable[[str], bytes]
+) -> tuple[list, list[str]]:
+    """Inspect format-specific soft protections and advertise their strategies."""
+    inspectors = {
+        DocumentFormat.EXCEL_OOXML: (
+            excel.inspect_excel_parts,
+            ["soft:sheetProtection", "soft:workbookProtection"],
+        ),
+        DocumentFormat.WORD_OOXML: (word.inspect_word_parts, ["soft:documentProtection"]),
+        DocumentFormat.POWERPOINT_OOXML: (
+            powerpoint.inspect_powerpoint_parts,
+            ["soft:modifyVerifier"],
+        ),
+    }
+    inspector = inspectors.get(fmt)
+    if inspector is None:
+        return [], []
+    inspect_parts, strategies = inspector
+    return list(inspect_parts(names, read)), list(strategies)
+
+
 def unlock_ooxml_package(
     input_path: Path,
     output_path: Path,
@@ -116,10 +127,7 @@ def unlock_ooxml_package(
     source_path = Path(input_path)
     target_path = Path(output_path)
 
-    if target_path.exists() and not options.overwrite:
-        from dietrich.errors import OutputExistsError
-
-        raise OutputExistsError(f"{target_path} already exists.")
+    _require_output_path(target_path, options)
 
     stats = PartStats()
     warnings: list[str] = []
@@ -135,75 +143,24 @@ def unlock_ooxml_package(
             vba_present = any(p in names for p in VBA_PROJECT_PATHS)
             transformers = _transformers_for(fmt)
 
-            skip_names: set[str] = set()
-            if options.strip_signatures and package_is_signed(names):
-                skip_names, sig_extra = strip_signature_members(names, source.read)
-                stats.add("signatures", 1 if skip_names else 0)
-                # Apply content-type / rels rewrites from strip helper via extra map.
-                rewritten_parts = sig_extra
-                warnings.append(
-                    "Digital signatures were stripped. The output is an unsigned working copy; "
-                    "authenticity of the original signer is no longer asserted."
-                )
-            else:
-                rewritten_parts = {}
-
-            with tempfile.NamedTemporaryFile(
-                prefix=f".{target_path.name}.",
-                suffix=".tmp",
-                dir=target_path.parent if target_path.parent.exists() else None,
-                delete=False,
-            ) as temp_file:
-                temp_path = Path(temp_file.name)
-
-            with zipfile.ZipFile(temp_path, "w") as target:
-                for info in source.infolist():
-                    name = info.filename.replace("\\", "/")
-                    if name in skip_names:
-                        continue
-                    if name in rewritten_parts:
-                        original_data = rewritten_parts[name]
-                    else:
-                        original_data = source.read(info)
-
-                    rewritten_data = original_data
-                    for transformer in transformers:
-                        rewritten_data = transformer(name, rewritten_data, options, stats)
-
-                    if options.unlock_vba and name in VBA_PROJECT_PATHS:
-                        from dietrich.ooxml.vba import unlock_vba_project
-
-                        rewritten_data, vba_n = unlock_vba_project(rewritten_data)
-                        stats.add("vba", vba_n)
-                        if vba_n == 0:
-                            msg = (
-                                f"{name}: --vba found no CMG/DPB/GC text "
-                                "(project stream may be compressed)."
-                            )
-                            if msg not in warnings:
-                                warnings.append(msg)
-
-                    # Preserve ZipInfo metadata (compression, timestamps, attrs).
-                    out_info = zipfile.ZipInfo(filename=info.filename, date_time=info.date_time)
-                    out_info.compress_type = info.compress_type
-                    out_info.comment = info.comment
-                    out_info.extra = info.extra
-                    out_info.create_system = info.create_system
-                    out_info.create_version = info.create_version
-                    out_info.extract_version = info.extract_version
-                    out_info.flag_bits = info.flag_bits
-                    out_info.internal_attr = info.internal_attr
-                    out_info.external_attr = info.external_attr
-                    target.writestr(out_info, rewritten_data)
-
-        with zipfile.ZipFile(temp_path) as output_archive:
-            failed_member = output_archive.testzip()
-        if failed_member is not None:
-            raise InvalidDocumentError(
-                f"written package failed ZIP verification at {failed_member}"
+            skip_names, rewritten_parts = _signature_rewrites(
+                names, source.read, options, stats, warnings
             )
 
-        publish_output(temp_path, target_path, overwrite=options.overwrite)
+            temp_path = _make_temporary_package_path(target_path)
+
+            _write_transformed_archive(
+                source,
+                temp_path,
+                transformers,
+                skip_names,
+                rewritten_parts,
+                options,
+                stats,
+                warnings,
+            )
+
+        _verify_and_publish_package(temp_path, target_path, options)
         temp_path = None
     except zipfile.BadZipFile as exc:
         raise InvalidDocumentError(
@@ -216,6 +173,26 @@ def unlock_ooxml_package(
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
 
+    return _package_result(source_path, target_path, stats, fmt, vba_present, warnings)
+
+
+def _require_output_path(target_path: Path, options: UnlockOptions) -> None:
+    """Refuse to overwrite an existing package unless the caller opted in."""
+    if target_path.exists() and not options.overwrite:
+        from dietrich.errors import OutputExistsError
+
+        raise OutputExistsError(f"{target_path} already exists.")
+
+
+def _package_result(
+    source_path: Path,
+    target_path: Path,
+    stats: PartStats,
+    fmt: DocumentFormat,
+    vba_present: bool,
+    warnings: list[str],
+) -> UnlockResult:
+    """Construct the stable unlock result after a successful package rewrite."""
     return UnlockResult(
         input_path=source_path,
         output_path=target_path,
@@ -224,3 +201,106 @@ def unlock_ooxml_package(
         vba_project_present=vba_present,
         warnings=tuple(warnings),
     )
+
+
+def _make_temporary_package_path(target_path: Path) -> Path:
+    """Allocate a target-adjacent temporary file for an atomic package rewrite."""
+    with tempfile.NamedTemporaryFile(
+        prefix=f".{target_path.name}.",
+        suffix=".tmp",
+        dir=target_path.parent if target_path.parent.exists() else None,
+        delete=False,
+    ) as temp_file:
+        return Path(temp_file.name)
+
+
+def _verify_and_publish_package(temp_path: Path, target_path: Path, options: UnlockOptions) -> None:
+    """Check the written ZIP before atomically publishing it to the target path."""
+    with zipfile.ZipFile(temp_path) as output_archive:
+        failed_member = output_archive.testzip()
+    if failed_member is not None:
+        raise InvalidDocumentError(f"written package failed ZIP verification at {failed_member}")
+    publish_output(temp_path, target_path, overwrite=options.overwrite)
+
+
+def _signature_rewrites(
+    names: list[str],
+    read: Callable[[str], bytes],
+    options: UnlockOptions,
+    stats: PartStats,
+    warnings: list[str],
+) -> tuple[set[str], dict[str, bytes]]:
+    """Return signature members to omit and relationship/content-type replacements."""
+    if not options.strip_signatures or not package_is_signed(names):
+        return set(), {}
+    skip_names, rewritten_parts = strip_signature_members(names, read)
+    stats.add("signatures", 1 if skip_names else 0)
+    warnings.append(
+        "Digital signatures were stripped. The output is an unsigned working copy; "
+        "authenticity of the original signer is no longer asserted."
+    )
+    return skip_names, rewritten_parts
+
+
+def _write_transformed_archive(
+    source: zipfile.ZipFile,
+    temp_path: Path,
+    transformers: list[Transformer],
+    skip_names: set[str],
+    rewritten_parts: dict[str, bytes],
+    options: UnlockOptions,
+    stats: PartStats,
+    warnings: list[str],
+) -> None:
+    """Rewrite each retained ZIP member while preserving member metadata."""
+    with zipfile.ZipFile(temp_path, "w") as target:
+        for info in source.infolist():
+            name = info.filename.replace("\\", "/")
+            if name not in skip_names:
+                target.writestr(
+                    _copy_zip_info(info),
+                    _rewrite_member(
+                        source, info, name, transformers, rewritten_parts, options, stats, warnings
+                    ),
+                )
+
+
+def _rewrite_member(
+    source: zipfile.ZipFile,
+    info: zipfile.ZipInfo,
+    name: str,
+    transformers: list[Transformer],
+    rewritten_parts: dict[str, bytes],
+    options: UnlockOptions,
+    stats: PartStats,
+    warnings: list[str],
+) -> bytes:
+    """Apply XML and optional VBA transforms to one source member."""
+    data = rewritten_parts.get(name, source.read(info))
+    for transformer in transformers:
+        data = transformer(name, data, options, stats)
+    if options.unlock_vba and name in VBA_PROJECT_PATHS:
+        from dietrich.ooxml.vba import unlock_vba_project
+
+        data, touched = unlock_vba_project(data)
+        stats.add("vba", touched)
+        if touched == 0:
+            warning = f"{name}: --vba found no CMG/DPB/GC text (project stream may be compressed)."
+            if warning not in warnings:
+                warnings.append(warning)
+    return data
+
+
+def _copy_zip_info(info: zipfile.ZipInfo) -> zipfile.ZipInfo:
+    """Clone the ZIP metadata that must survive a package rewrite."""
+    copied = zipfile.ZipInfo(filename=info.filename, date_time=info.date_time)
+    copied.compress_type = info.compress_type
+    copied.comment = info.comment
+    copied.extra = info.extra
+    copied.create_system = info.create_system
+    copied.create_version = info.create_version
+    copied.extract_version = info.extract_version
+    copied.flag_bits = info.flag_bits
+    copied.internal_attr = info.internal_attr
+    copied.external_attr = info.external_attr
+    return copied
