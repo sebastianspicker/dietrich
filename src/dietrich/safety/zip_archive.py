@@ -57,8 +57,7 @@ def validate_archive_safety(
 
     reject_encrypted_entries(archive)
     names = [info.filename for info in entries]
-    if len(names) != len(set(names)):
-        raise UnsafeArchiveError("archive contains duplicate member names.")
+    _reject_duplicate_names(names)
 
     if not allow_signed and package_is_signed(names):
         raise SignedDocumentError(
@@ -68,17 +67,28 @@ def validate_archive_safety(
 
     total_size = 0
     for info in entries:
-        if info.file_size > MAX_MEMBER_UNCOMPRESSED_BYTES:
-            raise UnsafeArchiveError(
-                f"{info.filename} expands to {info.file_size} bytes; the per-member limit is "
-                f"{MAX_MEMBER_UNCOMPRESSED_BYTES}."
-            )
-        if compression_ratio_exceeds_limit(info):
-            raise UnsafeArchiveError(
-                f"{info.filename} exceeds the compression ratio limit of {MAX_COMPRESSION_RATIO}:1."
-            )
+        _validate_member_limits(info)
         total_size += info.file_size
         if total_size > MAX_TOTAL_UNCOMPRESSED_BYTES:
             raise UnsafeArchiveError(
                 f"archive expands to more than {MAX_TOTAL_UNCOMPRESSED_BYTES} bytes."
             )
+
+
+def _reject_duplicate_names(names: list[str]) -> None:
+    """Reject duplicate ZIP member names."""
+    if len(names) != len(set(names)):
+        raise UnsafeArchiveError("archive contains duplicate member names.")
+
+
+def _validate_member_limits(info: zipfile.ZipInfo) -> None:
+    """Validate one member's expansion and compression limits."""
+    if info.file_size > MAX_MEMBER_UNCOMPRESSED_BYTES:
+        raise UnsafeArchiveError(
+            f"{info.filename} expands to {info.file_size} bytes; the per-member limit is "
+            f"{MAX_MEMBER_UNCOMPRESSED_BYTES}."
+        )
+    if compression_ratio_exceeds_limit(info):
+        raise UnsafeArchiveError(
+            f"{info.filename} exceeds the compression ratio limit of {MAX_COMPRESSION_RATIO}:1."
+        )

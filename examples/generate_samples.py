@@ -45,7 +45,9 @@ def main() -> int:
         make_restricted_pdf(OUT / "restricted.pdf")
         make_user_locked_pdf(OUT / "user_locked.pdf", password="demo")
         print("wrote PDF demos (restricted.pdf, user_locked.pdf password=demo)")
-    except Exception as exc:
+    except ModuleNotFoundError as exc:
+        if exc.name != "pikepdf":
+            raise
         print(f"skip PDF demos: {exc}", file=sys.stderr)
 
     # Link/copy public fixtures for convenience

@@ -37,14 +37,7 @@ def inspect_cfbf(path: Path) -> DocumentInspection:
 
     with olefile.OleFileIO(str(input_path)) as ole:
         streams = ["/".join(s) for s in ole.listdir()]
-        if "Workbook" in streams or any(s.endswith("/Workbook") for s in streams):
-            kind = "xls"
-        elif "WordDocument" in streams:
-            kind = "doc"
-        elif "PowerPoint Document" in streams:
-            kind = "ppt"
-        if "EncryptionInfo" in streams or "EncryptedPackage" in streams:
-            kind = "encrypted_ooxml"
+    kind = _classify_streams(streams)
 
     if kind == "encrypted_ooxml":
         strategies = (
@@ -68,3 +61,16 @@ def inspect_cfbf(path: Path) -> DocumentInspection:
         encrypted=False,
         notes=tuple(notes + [f"streams={len(streams)}", f"kind={kind}"]),
     )
+
+
+def _classify_streams(streams: list[str]) -> str:
+    """Classify CFBF streams by legacy document family."""
+    if "EncryptionInfo" in streams or "EncryptedPackage" in streams:
+        return "encrypted_ooxml"
+    if "Workbook" in streams or any(s.endswith("/Workbook") for s in streams):
+        return "xls"
+    if "WordDocument" in streams:
+        return "doc"
+    if "PowerPoint Document" in streams:
+        return "ppt"
+    return "unknown"

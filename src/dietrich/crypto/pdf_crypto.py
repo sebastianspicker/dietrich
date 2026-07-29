@@ -7,10 +7,10 @@ on user-password crypto and hash export routing.
 from __future__ import annotations
 
 import shutil
-import subprocess
 from pathlib import Path
 
 from dietrich.errors import EncryptedDocumentError, MissingDependencyError
+from dietrich.process import run_pdf2john_sync
 
 
 def _require_pikepdf():
@@ -56,31 +56,40 @@ def decrypt_to(
 def export_hash_line(path: Path, fmt: str = "hashcat") -> str:
     """Export a crackable PDF hash (native first, pdf2john fallback)."""
     path = Path(path)
-    native_err: Exception | None = None
     try:
-        from dietrich.crypto.pdf_hash import export_pdf_hash
-
-        return export_pdf_hash(path, fmt=fmt)
+        return _native_hash_line(path, fmt)
     except Exception as exc:
-        native_err = exc
+        native_error = exc
+    fallback = _pdf2john_hash_line(path, fmt)
+    if fallback is not None:
+        return fallback
+    raise EncryptedDocumentError(f"could not export PDF hash for {path.name}: {native_error}")
 
-    pdf2john = shutil.which("pdf2john.pl") or shutil.which("pdf2john")
-    if pdf2john:
-        try:
-            proc = subprocess.run(
-                [pdf2john, str(path)],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            lines = [ln.strip() for ln in (proc.stdout or "").splitlines() if ln.strip()]
-            if lines:
-                raw = lines[0]
-                if fmt == "hashcat" and ":" in raw and not raw.startswith("$"):
-                    return raw.split(":", 1)[-1]
-                return raw
-        except (OSError, subprocess.TimeoutExpired):
-            pass
 
-    raise EncryptedDocumentError(f"could not export PDF hash for {path.name}: {native_err}")
+def _native_hash_line(path: Path, fmt: str) -> str:
+    """Ask the native parser for a hash before invoking an external fallback."""
+    from dietrich.crypto.pdf_hash import export_pdf_hash
+
+    return export_pdf_hash(path, fmt=fmt)
+
+
+def _pdf2john_hash_line(path: Path, fmt: str) -> str | None:
+    """Run a controlled pdf2john argv and normalize its first non-empty line."""
+    executable = shutil.which("pdf2john.pl") or shutil.which("pdf2john")
+    if executable is None:
+        return None
+    try:
+        process = run_pdf2john_sync(executable, path, timeout=60)
+    except (OSError, TimeoutError):
+        return None
+    return _normalize_pdf2john_output(process.stdout or "", fmt)
+
+
+def _normalize_pdf2john_output(output: str, fmt: str) -> str | None:
+    """Select pdf2john's first line and strip its filename prefix for hashcat."""
+    line = next((line.strip() for line in output.splitlines() if line.strip()), None)
+    if line is None:
+        return None
+    if fmt == "hashcat" and ":" in line and not line.startswith("$"):
+        return line.split(":", 1)[-1]
+    return line

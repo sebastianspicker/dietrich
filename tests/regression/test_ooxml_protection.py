@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from dietrich import UnlockOptions, unlock_document
+from dietrich.errors import InvalidDocumentError
+from dietrich.ooxml.xml_strip import count_elements
 
 
 def _pack(path: Path, parts: dict[str, bytes]) -> Path:
@@ -78,10 +80,17 @@ def test_docsecurity_cleared(tmp_path: Path) -> None:
         assert b">0</" in app and b"DocSecurity" in app
 
 
+def test_ooxml_entity_declarations_are_rejected() -> None:
+    source = b'<!DOCTYPE worksheet [<!ENTITY value "expanded">]><worksheet>&value;</worksheet>'
+
+    with pytest.raises(InvalidDocumentError):
+        count_elements(source, "worksheet", "xl/worksheets/sheet1.xml")
+
+
 def test_pdf_hash_export_native_or_clear_error(tmp_path: Path, monkeypatch) -> None:
     """Without Encrypt dict, export fails clearly; with user-encrypt, native works."""
     from dietrich.crypto import pdf_crypto
-    from dietrich.errors import EncryptedDocumentError, InvalidDocumentError
+    from dietrich.errors import EncryptedDocumentError
 
     monkeypatch.setattr(pdf_crypto.shutil, "which", lambda *_a, **_k: None)
     pdf = tmp_path / "a.pdf"
