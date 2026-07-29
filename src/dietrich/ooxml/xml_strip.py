@@ -7,8 +7,10 @@ markup or namespace declarations.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from xml.etree import ElementTree
 from xml.parsers.expat import ExpatError, ParserCreate
+
+from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
 
 from dietrich.errors import InvalidDocumentError
 
@@ -46,7 +48,7 @@ def count_elements(source: bytes, element_local_name: str, path: str) -> int:
     """Count elements with the given local name in XML bytes."""
     try:
         root = ElementTree.fromstring(source)
-    except ElementTree.ParseError as exc:
+    except (DefusedXmlException, ElementTree.ParseError) as exc:
         raise InvalidDocumentError(f"{path} is not valid XML: {exc}") from exc
     return sum(1 for element in root.iter() if local_name(element.tag) == element_local_name)
 
