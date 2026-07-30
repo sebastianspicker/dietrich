@@ -46,6 +46,16 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 let selected = "soft";
 let tick = 0;
 
+function fixtureFor(key) {
+  switch (key) {
+    case "soft": return fixtures.soft;
+    case "signed": return fixtures.signed;
+    case "encrypted": return fixtures.encrypted;
+    case "pdf": return fixtures.pdf;
+    default: return fixtures.soft;
+  }
+}
+
 function outputName(name) {
   const dot = name.lastIndexOf(".");
   return `${name.slice(0, dot)}_unprotected${name.slice(dot)}`;
@@ -74,7 +84,7 @@ function setDossier({ heading, meta, body, state }) {
 
 function selectFixture(key, announce = true) {
   selected = key;
-  const fixture = fixtures[key];
+  const fixture = fixtureFor(key);
   $$(".fixture").forEach((button) => {
     const active = button.dataset.fixture === key;
     button.classList.toggle("is-selected", active);
@@ -93,13 +103,13 @@ function selectFixture(key, announce = true) {
 }
 
 function inspect() {
-  const fixture = fixtures[selected];
+  const fixture = fixtureFor(selected);
   setDossier(fixture);
   log(` simulated inspect · ${fixture.name} · no command run`);
 }
 
 function unlock() {
-  const fixture = fixtures[selected];
+  const fixture = fixtureFor(selected);
   if (selected === "signed" && !$("#strip-signatures").checked) {
     setDossier({
       heading: "OPTION REQUIRED",
@@ -120,7 +130,7 @@ function unlock() {
 }
 
 function exportHash() {
-  const fixture = fixtures[selected];
+  const fixture = fixtureFor(selected);
   setDossier({
     heading: "SIMULATED HASH EXPORT",
     meta: fixture.meta,
@@ -138,6 +148,16 @@ function reset() {
   selectFixture("soft", false);
 }
 
+function runKeyboardAction(key) {
+  switch (key) {
+    case "i": inspect(); return true;
+    case "u": unlock(); return true;
+    case "e": exportHash(); return true;
+    case "r": reset(); return true;
+    default: return false;
+  }
+}
+
 $$(".fixture").forEach((button) => button.addEventListener("click", () => selectFixture(button.dataset.fixture)));
 $("#inspect").addEventListener("click", inspect);
 $("#unlock").addEventListener("click", unlock);
@@ -146,9 +166,5 @@ $("#reset").addEventListener("click", reset);
 
 document.addEventListener("keydown", (event) => {
   if (event.altKey || event.ctrlKey || event.metaKey || event.target.matches("input, summary")) return;
-  const action = { i: inspect, u: unlock, e: exportHash, r: reset }[event.key.toLowerCase()];
-  if (action) {
-    event.preventDefault();
-    action();
-  }
+  if (runKeyboardAction(event.key.toLowerCase())) event.preventDefault();
 });

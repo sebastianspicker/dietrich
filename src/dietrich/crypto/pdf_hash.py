@@ -151,7 +151,7 @@ def _encrypt_dict_via_pikepdf(path: Path) -> dict[str, str] | None:
 def _pikepdf_encrypt_or_raw(path: Path, pikepdf) -> dict[str, str] | None:
     """Use pikepdf when it can open the file, otherwise retain raw-trailer fallback."""
     try:
-        pdf = pikepdf.open(path, password="")
+        pdf = pikepdf.open(path)
     except pikepdf.PasswordError:
         return _encrypt_from_raw_trailer(path)
     except (OSError, TypeError, ValueError):
