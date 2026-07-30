@@ -133,13 +133,29 @@ def test_encrypted_docx_password_unlock(tmp_path: Path) -> None:
 def test_soft_unlock_after_manual_decrypt_with_injected_protection(tmp_path: Path) -> None:
     """Decrypt fixture, inject sheetProtection, then soft-unlock via shipped API."""
     plain = tmp_path / "decrypted.xlsx"
+    _decrypt_fixture(plain)
+
+    protected = tmp_path / "protected.xlsx"
+    _inject_ooxml_protection(plain, protected)
+
+    out = tmp_path / "soft.xlsx"
+    result = unlock_document(protected, out, UnlockOptions())
+    assert result.removed.worksheet_protections >= 1
+    assert result.removed.workbook_protections >= 1
+    _assert_ooxml_protection_removed(out)
+
+
+def _decrypt_fixture(destination: Path) -> None:
+    """Decrypt the shared encrypted fixture into a temporary OOXML package."""
     with ENCRYPTED_XLSX.open("rb") as handle:
         office = msoffcrypto.OfficeFile(handle)
         office.load_key(password=KNOWN_PASSWORD)
-        with plain.open("wb") as out:
+        with destination.open("wb") as out:
             office.decrypt(out)
 
-    protected = tmp_path / "protected.xlsx"
+
+def _inject_ooxml_protection(plain: Path, protected: Path) -> None:
+    """Add worksheet and workbook protection markers to an OOXML package."""
     with zipfile.ZipFile(plain, "r") as src, zipfile.ZipFile(protected, "w") as dst:
         for info in src.infolist():
             data = src.read(info)
@@ -159,12 +175,14 @@ def test_soft_unlock_after_manual_decrypt_with_injected_protection(tmp_path: Pat
                 )
             dst.writestr(info, data)
 
-    out = tmp_path / "soft.xlsx"
-    result = unlock_document(protected, out, UnlockOptions())
-    assert result.removed.worksheet_protections >= 1
-    assert result.removed.workbook_protections >= 1
-    with zipfile.ZipFile(out) as archive:
-        for name in archive.namelist():
-            if name.startswith("xl/worksheets/") and name.endswith(".xml"):
-                assert b"sheetProtection" not in archive.read(name)
+
+def _assert_ooxml_protection_removed(path: Path) -> None:
+    """Assert the soft unlock removed the markers injected for this integration test."""
+    with zipfile.ZipFile(path) as archive:
+        worksheet_names = [
+            name
+            for name in archive.namelist()
+            if name.startswith("xl/worksheets/") and name.endswith(".xml")
+        ]
+        assert all(b"sheetProtection" not in archive.read(name) for name in worksheet_names)
         assert b"workbookProtection" not in archive.read("xl/workbook.xml")
