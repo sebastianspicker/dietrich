@@ -21,67 +21,65 @@ def unlock_vba_project(data: bytes) -> tuple[bytes, int]:
 
     # Prefer OLE PROJECT stream when compound file.
     if data[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
-        try:
-            return _unlock_ole_vba(data)
-        except Exception:
-            pass
+        ole_result = _try_unlock_ole_vba(data)
+        if ole_result is not None:
+            return ole_result
 
     return _clear_vba_keys_in_bytes(data)
 
 
-def _unlock_ole_vba(data: bytes) -> tuple[bytes, int]:
+def _try_unlock_ole_vba(data: bytes) -> tuple[bytes, int] | None:
+    """Attempt the optional OLE stream path and fall back only on malformed OLE data."""
+    try:
+        import olefile
+    except ImportError:
+        return None
+    try:
+        return _unlock_ole_vba(data, olefile)
+    except (OSError, ValueError, olefile.olefile.OleFileError):
+        return None
+
+
+def _unlock_ole_vba(data: bytes, olefile) -> tuple[bytes, int]:
     """Internal helper: _unlock_ole_vba."""
     import io
-
-    import olefile
 
     bio = io.BytesIO(data)
     if not olefile.isOleFile(bio):
         return _clear_vba_keys_in_bytes(data)
 
     bio.seek(0)
-    touched_total = 0
-    # olefile cannot easily rewrite in place; extract PROJECT-like streams,
-    # patch, and rebuild via rewriting all streams into a new OLE is heavy.
-    # For alpha: patch stream bytes inside the CFBF by replacing equal-length
-    # or shorter KEY= values in the raw container after locating stream data.
     with olefile.OleFileIO(bio) as ole:
-        stream_names = ["/".join(s) for s in ole.listdir(streams=True, storages=False)]
-        project_streams = [
-            n for n in stream_names if n.lower().endswith("project") or n.lower() == "project"
-        ]
-        if not project_streams:
-            # Fall back to scanning all streams for DPB=
-            project_streams = stream_names
+        patches, touched_total = _ole_vba_patches(ole)
+    result = _apply_ole_patches(data, patches)
+    if touched_total:
+        return result, touched_total
+    return _clear_vba_keys_in_bytes(data)
 
-        patches: list[tuple[bytes, bytes]] = []
-        for name in project_streams:
-            parts = name.split("/")
-            raw = ole.openstream(parts).read()
-            if not any(k in raw for k in (b"DPB", b"CMG", b"GC", b"dpb", b"cmg")):
-                continue
-            patched, n = _clear_vba_keys_in_bytes(raw)
-            if n and len(patched) == len(raw):
-                # Same-length patch can be applied in the outer CFBF by replace
-                if patched != raw:
-                    patches.append((raw, patched))
-                    touched_total += n
-            elif n and len(patched) != len(raw):
-                # Length-changing: still apply global replace of original segment
-                patches.append((raw, patched))
-                touched_total += n
 
+def _ole_vba_patches(ole) -> tuple[list[tuple[bytes, bytes]], int]:
+    """Read PROJECT-like OLE streams and collect raw-container replacements."""
+    names = ["/".join(parts) for parts in ole.listdir(streams=True, storages=False)]
+    project_streams = [name for name in names if name.lower().endswith("project")]
+    candidates = project_streams or names
+    patches: list[tuple[bytes, bytes]] = []
+    touched_total = 0
+    for name in candidates:
+        raw = ole.openstream(name.split("/")).read()
+        patched, touched = _clear_vba_keys_in_bytes(raw)
+        if touched and patched != raw:
+            patches.append((raw, patched))
+            touched_total += touched
+    return patches, touched_total
+
+
+def _apply_ole_patches(data: bytes, patches: list[tuple[bytes, bytes]]) -> bytes:
+    """Apply each verified raw stream replacement once in the outer CFBF bytes."""
     result = data
     for old, new in patches:
         if old in result:
             result = result.replace(old, new, 1)
-        elif len(old) == len(new):
-            # try find longest common - skip if not found
-            pass
-
-    if touched_total:
-        return result, touched_total
-    return _clear_vba_keys_in_bytes(data)
+    return result
 
 
 def _clear_vba_keys_in_bytes(data: bytes) -> tuple[bytes, int]:

@@ -192,17 +192,7 @@ def _inspection_findings(
     else:
         rows.append(("Soft hits", "None", "ok"))
 
-    # Open password
-    if inspection.encrypted or inspection.user_password_required:
-        scheme = inspection.encryption_scheme or "required"
-        rows.append(("Open password", f"Required ({scheme})", "signal"))
-        if inspection.encryption_spin_count is not None:
-            cost = f"spin={inspection.encryption_spin_count}" + (
-                f" · {inspection.encryption_cost_class}" if inspection.encryption_cost_class else ""
-            )
-            rows.append(("Encryption cost", cost, "warn"))
-    else:
-        rows.append(("Open password", "Not required", "ok"))
+    rows.extend(_password_findings(inspection))
 
     # Signed
     rows.append(
@@ -215,19 +205,35 @@ def _inspection_findings(
     # Format (short)
     rows.append(("Format", format_label(inspection.document_format), "neutral"))
 
-    # Owner restrictions (PDF)
-    if inspection.owner_restrictions:
-        rows.append(("Owner restrictions", "Yes", "warn"))
-
-    # VBA when present
-    if inspection.vba_project_present:
-        rows.append(("VBA project", "Present - enable Unlock VBA only if needed", "neutral"))
-
-    # Hashcat mode for encrypted files
-    if inspection.hashcat_mode is not None:
-        rows.append(("Hashcat mode", str(inspection.hashcat_mode), "neutral"))
+    rows.extend(_optional_findings(inspection))
 
     return tuple(rows)
+
+
+def _password_findings(inspection: DocumentInspection) -> list[tuple[str, str, str]]:
+    """Return dossier rows for open-password metadata."""
+    if not (inspection.encrypted or inspection.user_password_required):
+        return [("Open password", "Not required", "ok")]
+    scheme = inspection.encryption_scheme or "required"
+    rows = [("Open password", f"Required ({scheme})", "signal")]
+    if inspection.encryption_spin_count is not None:
+        cost = f"spin={inspection.encryption_spin_count}"
+        if inspection.encryption_cost_class:
+            cost += f" · {inspection.encryption_cost_class}"
+        rows.append(("Encryption cost", cost, "warn"))
+    return rows
+
+
+def _optional_findings(inspection: DocumentInspection) -> list[tuple[str, str, str]]:
+    """Return dossier rows for optional protection metadata."""
+    rows: list[tuple[str, str, str]] = []
+    if inspection.owner_restrictions:
+        rows.append(("Owner restrictions", "Yes", "warn"))
+    if inspection.vba_project_present:
+        rows.append(("VBA project", "Present - enable Unlock VBA only if needed", "neutral"))
+    if inspection.hashcat_mode is not None:
+        rows.append(("Hashcat mode", str(inspection.hashcat_mode), "neutral"))
+    return rows
 
 
 def _irm_finding(notes: tuple[str, ...]) -> tuple[str, str, str]:

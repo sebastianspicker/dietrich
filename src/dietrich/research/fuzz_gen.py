@@ -72,15 +72,20 @@ def generate_xml_part_mutants(
                     for info in zf.infolist():
                         data = zf.read(info)
                         if info.filename == names[i % len(names)]:
-                            # Insert an unknown element or break a tag
-                            if b">" in data:
-                                idx = data.find(b">")
-                                data = data[:idx] + b" fuzz='1'" + data[idx:]
-                            if rng.random() < 0.5 and len(data) > 10:
-                                data = data[:-5]  # truncate XML
+                            data = _mutate_xml_part(data, rng)
                         out.writestr(info, data)
                 outputs.append(target)
     except zipfile.BadZipFile:
         return generate_ooxml_mutants(seed_path, out_dir, count=count, seed=seed)
 
     return outputs
+
+
+def _mutate_xml_part(data: bytes, rng: random.Random) -> bytes:
+    """Insert deterministic XML noise and optionally truncate the part."""
+    if b">" in data:
+        idx = data.find(b">")
+        data = data[:idx] + b" fuzz='1'" + data[idx:]
+    if rng.random() < 0.5 and len(data) > 10:
+        data = data[:-5]
+    return data

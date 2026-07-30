@@ -64,21 +64,14 @@ def validate_and_build(state: FormState) -> ValidationResult:
     if wordlist is not None and not wordlist.is_file():
         return ValidationResult(error=f"Wordlist not found: {wordlist}")
 
-    if state.use_hashcat:
-        mask = _empty_to_none(state.mask)
-        if wordlist is None and mask is None:
-            return ValidationResult(error="Hashcat needs a wordlist, a mask, or leave Hashcat off.")
+    hashcat_error = _validate_hashcat(state, wordlist)
+    if hashcat_error:
+        return ValidationResult(error=hashcat_error)
 
     workers = max(1, int(state.workers or 1))
-    timeout: int | None = None
-    timeout_raw = _empty_to_none(state.hashcat_timeout)
-    if timeout_raw is not None:
-        try:
-            timeout = int(timeout_raw)
-            if timeout <= 0:
-                raise ValueError
-        except ValueError:
-            return ValidationResult(error="Hashcat timeout must be a positive integer (seconds).")
+    timeout, timeout_error = _parse_timeout(state.hashcat_timeout)
+    if timeout_error:
+        return ValidationResult(error=timeout_error)
 
     options = UnlockOptions(
         remove_worksheet_protection=True,
@@ -101,6 +94,27 @@ def validate_and_build(state: FormState) -> ValidationResult:
         hashcat_timeout=timeout,
     )
     return ValidationResult(options=options)
+
+
+def _parse_timeout(value: str) -> tuple[int | None, str | None]:
+    """Parse an optional positive hashcat timeout."""
+    timeout_raw = _empty_to_none(value)
+    if timeout_raw is None:
+        return None, None
+    try:
+        timeout = int(timeout_raw)
+        if timeout <= 0:
+            raise ValueError
+    except ValueError:
+        return None, "Hashcat timeout must be a positive integer (seconds)."
+    return timeout, None
+
+
+def _validate_hashcat(state: FormState, wordlist: Path | None) -> str | None:
+    """Validate hashcat inputs when enabled."""
+    if state.use_hashcat and wordlist is None and _empty_to_none(state.mask) is None:
+        return "Hashcat needs a wordlist, a mask, or leave Hashcat off."
+    return None
 
 
 def form_state_from_widgets(

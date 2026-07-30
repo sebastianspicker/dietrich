@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-from dietrich.errors import MissingDependencyError
+from dietrich.errors import MissingDependencyError, OutputExistsError
 
 
 def resign_ooxml_package(
@@ -24,6 +24,24 @@ def resign_ooxml_package(
     Builds `_xmlsignatures/origin.sigs` + `sig1.xml` with XML-DSig enveloping
     a simple manifest of part digests (ECMA-376 style subset).
     """
+    x509, hashes, serialization, padding = _signing_primitives()
+
+    package_path = Path(package_path)
+    output_path = Path(output_path)
+    if output_path.exists() and not overwrite:
+        raise OutputExistsError(f"{output_path} already exists.")
+
+    certificate = x509.load_pem_x509_certificate(Path(cert_pem).read_bytes())
+    key = serialization.load_pem_private_key(Path(key_pem).read_bytes(), password=None)
+    parts = _unsigned_package_parts(package_path)
+    _add_signature_parts(parts, certificate, key, hashes, serialization, padding)
+    _write_signed_package(output_path, parts)
+
+    return output_path
+
+
+def _signing_primitives():
+    """Import optional cryptography primitives with Dietrich's dependency error."""
     try:
         from cryptography import x509
         from cryptography.hazmat.primitives import hashes, serialization
@@ -33,73 +51,65 @@ def resign_ooxml_package(
             "Signature re-sign requires the cryptography package: "
             "pip install 'dietrich[sign]' (cryptography)."
         ) from exc
+    return x509, hashes, serialization, padding
 
-    package_path = Path(package_path)
-    output_path = Path(output_path)
-    if output_path.exists() and not overwrite:
-        from dietrich.errors import OutputExistsError
 
-        raise OutputExistsError(f"{output_path} already exists.")
+def _unsigned_package_parts(package_path: Path) -> dict[str, bytes]:
+    """Read all package parts except a prior OOXML signature directory."""
+    with zipfile.ZipFile(package_path) as archive:
+        return {
+            info.filename.replace("\\", "/"): archive.read(info)
+            for info in archive.infolist()
+            if not info.filename.lower().startswith("_xmlsignatures/")
+        }
 
-    cert = x509.load_pem_x509_certificate(Path(cert_pem).read_bytes())
-    key = serialization.load_pem_private_key(Path(key_pem).read_bytes(), password=None)
 
-    # Read all parts except old signatures
-    parts: dict[str, bytes] = {}
-    with zipfile.ZipFile(package_path) as zf:
-        for info in zf.infolist():
-            name = info.filename.replace("\\", "/")
-            if name.lower().startswith("_xmlsignatures/"):
-                continue
-            parts[name] = zf.read(info)
-
-    # Manifest: SHA-256 of each part (excluding signature parts we add)
-    references: list[tuple[str, str]] = []
-    for name in sorted(parts):
-        digest = base64.b64encode(hashlib.sha256(parts[name]).digest()).decode("ascii")
-        references.append((name, digest))
-
-    manifest_xml = _build_manifest_xml(references)
-    # SignedInfo over manifest
+def _add_signature_parts(parts, certificate, key, hashes, serialization, padding) -> None:
+    """Add a manifest signature plus its content-type and origin relationships."""
+    manifest_xml = _build_manifest_xml(_part_references(parts))
     signed_info = _build_signed_info(manifest_xml)
-    signature_value = key.sign(
-        signed_info.encode("utf-8"),
-        padding.PKCS1v15(),
-        hashes.SHA256(),
+    signature = key.sign(signed_info.encode("utf-8"), padding.PKCS1v15(), hashes.SHA256())
+    signature_b64 = base64.b64encode(signature).decode("ascii")
+    certificate_b64 = base64.b64encode(
+        certificate.public_bytes(serialization.Encoding.DER)
+    ).decode("ascii")
+    parts["[Content_Types].xml"] = _ensure_signature_content_types(
+        parts.get("[Content_Types].xml", b"<Types/>")
     )
-    sig_b64 = base64.b64encode(signature_value).decode("ascii")
-    cert_b64 = base64.b64encode(cert.public_bytes(serialization.Encoding.DER)).decode("ascii")
+    parts["_rels/.rels"] = _ensure_origin_rel(parts.get("_rels/.rels", b"<Relationships/>"))
+    parts["_xmlsignatures/origin.sigs"] = _signature_origin_xml().encode("utf-8")
+    parts["_xmlsignatures/sig1.xml"] = _build_signature_xml(
+        signed_info, signature_b64, certificate_b64, manifest_xml
+    ).encode("utf-8")
 
-    sig_xml = _build_signature_xml(signed_info, sig_b64, cert_b64, manifest_xml)
-    origin = (
+
+def _part_references(parts: dict[str, bytes]) -> list[tuple[str, str]]:
+    """Hash every unsigned package part for the signature manifest."""
+    return [
+        (name, base64.b64encode(hashlib.sha256(parts[name]).digest()).decode("ascii"))
+        for name in sorted(parts)
+    ]
+
+
+def _signature_origin_xml() -> str:
+    """Build the OOXML relationship that points to the package signature XML."""
+    return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
         '<Relationship Id="rId1" '
         'Type="http://schemas.openxmlformats.org/package/2006/relationships/'
-        'digital-signature/signature" '
-        'Target="sig1.xml"/>'
+        'digital-signature/signature" Target="sig1.xml"/>'
         "</Relationships>"
     )
 
-    # Content types + root rels updates
-    ct = parts.get("[Content_Types].xml", b"<Types/>")
-    ct = _ensure_signature_content_types(ct)
-    parts["[Content_Types].xml"] = ct
 
-    root_rels = parts.get("_rels/.rels", b"<Relationships/>")
-    root_rels = _ensure_origin_rel(root_rels)
-    parts["_rels/.rels"] = root_rels
-
-    parts["_xmlsignatures/origin.sigs"] = origin.encode("utf-8")
-    parts["_xmlsignatures/sig1.xml"] = sig_xml.encode("utf-8")
-
+def _write_signed_package(output_path: Path, parts: dict[str, bytes]) -> None:
+    """Replace an allowed destination with the fully assembled signed package."""
     if output_path.exists():
         output_path.unlink()
-    with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, data in parts.items():
-            zf.writestr(name, data)
-
-    return output_path
+            archive.writestr(name, data)
 
 
 def _build_manifest_xml(references: list[tuple[str, str]]) -> str:

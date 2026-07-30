@@ -12,6 +12,7 @@ from collections.abc import Callable, Iterator
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
+from dietrich.errors import EncryptedDocumentError
 from dietrich.types import AttackOptions, AttackResult
 
 VerifierFn = Callable[[str], bool]
@@ -61,60 +62,43 @@ def expand_mask(mask: str) -> Iterator[str]:
 def iter_candidates(options: AttackOptions) -> Iterator[str]:
     """Yield unique password candidates under AttackOptions caps."""
     seen: set[str] = set()
-    count = 0
-
-    def consider(pw: str) -> str | None:
-        """Deduplicate and cap; return pw once if still under max_candidates."""
-        nonlocal count
-        if pw in seen or count >= options.max_candidates:
-            return None
-        seen.add(pw)
-        count += 1
-        return pw
-
-    if options.try_empty:
-        item = consider("")
-        if item is not None:
-            yield item
-
-    for pw in options.passwords:
-        item = consider(pw)
-        if item is not None:
-            yield item
-        if count >= options.max_candidates:
+    for password in _candidate_sources(options):
+        if password in seen:
+            continue
+        seen.add(password)
+        yield password
+        if len(seen) >= options.max_candidates:
             return
 
+
+def _candidate_sources(options: AttackOptions) -> Iterator[str]:
+    """Yield candidate sources in the documented priority order."""
+    if options.try_empty:
+        yield ""
+    yield from options.passwords
     if options.wordlist is not None:
-        path = Path(options.wordlist)
-        if not path.is_file():
-            from dietrich.errors import EncryptedDocumentError
-
-            raise EncryptedDocumentError(f"wordlist not found: {path}")
-        with path.open("r", encoding="utf-8", errors="ignore") as handle:
-            for line in handle:
-                item = consider(line.rstrip("\n\r"))
-                if item is not None:
-                    yield item
-                if count >= options.max_candidates:
-                    return
-
+        yield from _wordlist_candidates(Path(options.wordlist))
     if options.mask:
-        for pw in expand_mask(options.mask):
-            item = consider(pw)
-            if item is not None:
-                yield item
-            if count >= options.max_candidates:
-                return
-
+        yield from expand_mask(options.mask)
     if options.charset and options.max_length is not None:
-        alphabet = CHARSETS.get(options.charset, options.charset)
-        for length in range(1, options.max_length + 1):
-            for combo in itertools.product(alphabet, repeat=length):
-                item = consider("".join(combo))
-                if item is not None:
-                    yield item
-                if count >= options.max_candidates:
-                    return
+        yield from _charset_candidates(options.charset, options.max_length)
+
+
+def _wordlist_candidates(path: Path) -> Iterator[str]:
+    """Yield newline-normalized entries from an existing wordlist."""
+    if not path.is_file():
+        raise EncryptedDocumentError(f"wordlist not found: {path}")
+    with path.open("r", encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            yield line.rstrip("\n\r")
+
+
+def _charset_candidates(charset: str, max_length: int) -> Iterator[str]:
+    """Yield Cartesian-product candidates from a named or literal charset."""
+    alphabet = CHARSETS.get(charset, charset)
+    for length in range(1, max_length + 1):
+        for combo in itertools.product(alphabet, repeat=length):
+            yield "".join(combo)
 
 
 def run_attack(verifier: VerifierFn, options: AttackOptions) -> AttackResult:
@@ -177,52 +161,52 @@ def run_file_attack(
     worker = _try_ooxml_password if kind == "ooxml" else _try_pdf_password
     candidates = list(iter_candidates(options))
     if not candidates:
-        return AttackResult(
-            success=False,
-            password=None,
-            candidates_tried=0,
-            message="password not found in candidate set",
-        )
+        return _attack_not_found(0)
 
     if options.workers <= 1:
-        tried = 0
-        for password in candidates:
-            tried += 1
-            found = worker((str(path), password))
-            if found is not None:
-                return AttackResult(
-                    success=True,
-                    password=found,
-                    candidates_tried=tried,
-                    message="password found",
-                )
-        return AttackResult(
-            success=False,
-            password=None,
-            candidates_tried=tried,
-            message="password not found in candidate set",
-        )
+        return _run_serial_file_attack(path, candidates, worker)
+    return _run_parallel_file_attack(path, candidates, worker, options.workers)
 
-    # Parallel: submit in batches; stop early when found.
-    tried = 0
-    with ProcessPoolExecutor(max_workers=options.workers) as pool:
+
+def _run_serial_file_attack(path: Path, candidates: list[str], worker: VerifierFn) -> AttackResult:
+    """Try candidate passwords in order without creating child processes."""
+    for tried, password in enumerate(candidates, start=1):
+        found = worker((str(path), password))
+        if found is not None:
+            return _attack_found(found, tried)
+    return _attack_not_found(len(candidates))
+
+
+def _run_parallel_file_attack(
+    path: Path, candidates: list[str], worker: VerifierFn, workers: int
+) -> AttackResult:
+    """Submit independent candidates and cancel pending work after a match."""
+    with ProcessPoolExecutor(max_workers=workers) as pool:
         futures = {pool.submit(worker, (str(path), password)): password for password in candidates}
-        for future in as_completed(futures):
-            tried += 1
+        for tried, future in enumerate(as_completed(futures), start=1):
             try:
                 result = future.result()
             except Exception:
                 result = None
             if result is not None:
-                # Cancel remaining work best-effort
                 for pending in futures:
                     pending.cancel()
-                return AttackResult(
-                    success=True,
-                    password=result,
-                    candidates_tried=tried,
-                    message="password found",
-                )
+                return _attack_found(result, tried)
+    return _attack_not_found(len(candidates))
+
+
+def _attack_found(password: str, tried: int) -> AttackResult:
+    """Create the shared successful-attack result."""
+    return AttackResult(
+        success=True,
+        password=password,
+        candidates_tried=tried,
+        message="password found",
+    )
+
+
+def _attack_not_found(tried: int) -> AttackResult:
+    """Create the shared exhausted-candidate result."""
     return AttackResult(
         success=False,
         password=None,

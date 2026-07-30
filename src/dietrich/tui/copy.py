@@ -34,38 +34,7 @@ def summarize_inspection(inspection: DocumentInspection) -> list[str]:
         f"Format: {format_label(inspection.document_format)}",
     ]
 
-    if inspection.encrypted or inspection.user_password_required:
-        scheme = inspection.encryption_scheme or "open password"
-        lines.append(f"What we found: open password required ({scheme}).")
-        if inspection.encryption_spin_count:
-            lines.append(
-                f"Encryption cost: spin={inspection.encryption_spin_count}"
-                + (
-                    f" ({inspection.encryption_cost_class})"
-                    if inspection.encryption_cost_class
-                    else ""
-                )
-                + " - dictionary attacks can be slow on CPU."
-            )
-        if inspection.hashcat_mode:
-            lines.append(f"Hashcat mode (if exporting): {inspection.hashcat_mode}")
-        lines.append("Recommended: enter a password in Advanced, or provide a wordlist / mask.")
-        lines.append("Soft-only mode will fail on this file.")
-    elif inspection.signed:
-        lines.append("What we found: digitally signed package.")
-        lines.append(
-            "Recommended: enable “Strip signatures” in Advanced for an unsigned working copy."
-        )
-    elif inspection.owner_restrictions:
-        lines.append("What we found: PDF owner / permission restrictions.")
-        lines.append("Recommended: Unlock to strip restrictions (when the file is openable).")
-    elif inspection.soft_protections:
-        kinds = sorted({p.kind for p in inspection.soft_protections})
-        lines.append("What we found: structure locks (not encryption): " + ", ".join(kinds) + ".")
-        lines.append("Recommended: Unlock - Dietrich will remove soft protection flags.")
-    else:
-        lines.append("What we found: no soft locks or open-password encryption detected.")
-        lines.append("Unlock will write a side-by-side copy (may be unchanged).")
+    lines.extend(_inspection_status_lines(inspection))
 
     if inspection.vba_project_present:
         lines.append("Note: VBA project present - enable “Unlock VBA” only if you need it.")
@@ -74,6 +43,57 @@ def summarize_inspection(inspection: DocumentInspection) -> list[str]:
         lines.append(f"Note: {note}")
 
     lines.append("Authorized use only - documents you own or may modify.")
+    return lines
+
+
+def _inspection_status_lines(inspection: DocumentInspection) -> list[str]:
+    """Describe the highest-priority inspection finding."""
+    if inspection.encrypted or inspection.user_password_required:
+        return _encrypted_lines(inspection)
+    if inspection.signed:
+        return [
+            "What we found: digitally signed package.",
+            "Recommended: enable “Strip signatures” in Advanced for an unsigned working copy.",
+        ]
+    if inspection.owner_restrictions:
+        return [
+            "What we found: PDF owner / permission restrictions.",
+            "Recommended: Unlock to strip restrictions (when the file is openable).",
+        ]
+    if inspection.soft_protections:
+        kinds = sorted({p.kind for p in inspection.soft_protections})
+        return [
+            "What we found: structure locks (not encryption): " + ", ".join(kinds) + ".",
+            "Recommended: Unlock - Dietrich will remove soft protection flags.",
+        ]
+    return [
+        "What we found: no soft locks or open-password encryption detected.",
+        "Unlock will write a side-by-side copy (may be unchanged).",
+    ]
+
+
+def _encrypted_lines(inspection: DocumentInspection) -> list[str]:
+    """Describe open-password encryption and recovery guidance."""
+    scheme = inspection.encryption_scheme or "open password"
+    lines = [f"What we found: open password required ({scheme})."]
+    if inspection.encryption_spin_count:
+        suffix = (
+            f" ({inspection.encryption_cost_class})"
+            if inspection.encryption_cost_class
+            else ""
+        )
+        lines.append(
+            f"Encryption cost: spin={inspection.encryption_spin_count}{suffix} - "
+            "dictionary attacks can be slow on CPU."
+        )
+    if inspection.hashcat_mode:
+        lines.append(f"Hashcat mode (if exporting): {inspection.hashcat_mode}")
+    lines.extend(
+        [
+            "Recommended: enter a password in Advanced, or provide a wordlist / mask.",
+            "Soft-only mode will fail on this file.",
+        ]
+    )
     return lines
 
 

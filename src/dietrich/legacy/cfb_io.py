@@ -49,40 +49,17 @@ def patch_streams(path: Path, output_path: Path, patches: dict[str, bytes]) -> l
             entry_path = _resolve_entry(ole, name)
             if entry_path is None:
                 continue
-            old = ole.openstream(entry_path).read()
-            if len(new_bytes) != len(old):
-                raise ValueError(
-                    f"stream {name!r} length changed {len(old)} -> {len(new_bytes)}; "
-                    "in-place patch requires equal length"
-                )
-
-            dirent = _dirent_for(ole, entry_path)
-            if dirent is None:
-                raise ValueError(f"directory entry not found for {name}")
-
-            # Build sector chain
-            if hasattr(dirent, "build_sect_chain"):
-                dirent.build_sect_chain(ole)
-            chain = list(dirent.sect_chain or [])
-
-            if dirent.is_minifat:
-                if mini_stream is None:
-                    mini_stream = bytearray(_read_root_stream(ole, data, sector_size))
-                _poke_chain(mini_stream, chain, mini_size, new_bytes, base=0)
-                mini_dirty = True
-            else:
-                _poke_file_chain(data, chain, sector_size, new_bytes)
+            mini_stream, was_mini = _patch_entry(
+                ole, entry_path, name, new_bytes, data, sector_size, mini_size, mini_stream
+            )
+            mini_dirty = mini_dirty or was_mini
 
             applied.append(
-                "/".join(entry_path) if isinstance(entry_path, (list, tuple)) else str(entry_path)
+                "/".join(entry_path) if isinstance(entry_path, list | tuple) else str(entry_path)
             )
 
         if mini_dirty and mini_stream is not None:
-            root = ole.direntries[0]
-            if hasattr(root, "build_sect_chain"):
-                root.build_sect_chain(ole)
-            root_chain = list(root.sect_chain or [])
-            _poke_file_chain(data, root_chain, sector_size, bytes(mini_stream))
+            _flush_mini_stream(ole, data, sector_size, mini_stream)
 
     if not applied:
         raise ValueError("no matching streams to patch")
@@ -91,11 +68,43 @@ def patch_streams(path: Path, output_path: Path, patches: dict[str, bytes]) -> l
     return applied
 
 
+def _flush_mini_stream(ole, data: bytearray, sector_size: int, mini_stream: bytearray) -> None:
+    """Write the updated mini stream through the root directory chain."""
+    root = ole.direntries[0]
+    if hasattr(root, "build_sect_chain"):
+        root.build_sect_chain(ole)
+    root_chain = list(root.sect_chain or [])
+    _poke_file_chain(data, root_chain, sector_size, bytes(mini_stream))
+
+
+def _patch_entry(ole, entry_path, name, new_bytes, data, sector_size, mini_size, mini_stream):
+    """Patch one resolved stream and return updated mini-stream state."""
+    old = ole.openstream(entry_path).read()
+    if len(new_bytes) != len(old):
+        raise ValueError(
+            f"stream {name!r} length changed {len(old)} -> {len(new_bytes)}; "
+            "in-place patch requires equal length"
+        )
+    dirent = _dirent_for(ole, entry_path)
+    if dirent is None:
+        raise ValueError(f"directory entry not found for {name}")
+    if hasattr(dirent, "build_sect_chain"):
+        dirent.build_sect_chain(ole)
+    chain = list(dirent.sect_chain or [])
+    if dirent.is_minifat:
+        if mini_stream is None:
+            mini_stream = bytearray(_read_root_stream(ole, data, sector_size))
+        _poke_chain(mini_stream, chain, mini_size, new_bytes, base=0)
+        return mini_stream, True
+    _poke_file_chain(data, chain, sector_size, new_bytes)
+    return mini_stream, False
+
+
 def _resolve_entry(ole, name: str):
     """Resolve a directory entry index to stream bytes."""
     if ole.exists(name):
         return name
-    short = str(name).split("/")[-1]
+    short = str(name).rsplit("/", maxsplit=1)[-1]
     for entry in ole.listdir(streams=True, storages=False):
         if entry[-1] == short or "/".join(entry) == name:
             return entry
@@ -104,10 +113,10 @@ def _resolve_entry(ole, name: str):
 
 def _dirent_for(ole, entry_path):
     """Internal helper: _dirent_for."""
-    if isinstance(entry_path, (list, tuple)):
+    if isinstance(entry_path, list | tuple):
         short = entry_path[-1]
     else:
-        short = str(entry_path).split("/")[-1]
+        short = str(entry_path).rsplit("/", maxsplit=1)[-1]
     for e in ole.direntries:
         if e and e.name == short:
             return e

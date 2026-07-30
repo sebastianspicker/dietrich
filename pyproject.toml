@@ -35,7 +35,7 @@ classifiers = [
   "Topic :: Office/Business",
   "Topic :: Utilities",
 ]
-dependencies = []
+dependencies = ["defusedxml>=0.7.1"]
 
 [project.optional-dependencies]
 crypto = ["msoffcrypto-tool>=5.0.0"]
@@ -85,3 +85,11 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["B", "E", "F", "I", "UP"]
+
+[tool.bandit]
+# Assertions and synthetic passwords are test inputs, not production security controls.
+exclude_dirs = ["tests"]
+
+[tool.pylint.main]
+# Test modules intentionally use local imports, white-box assertions, and focused fixtures.
+ignore-paths = ["(^|.*/)tests/"]

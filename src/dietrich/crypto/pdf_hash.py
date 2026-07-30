@@ -27,58 +27,12 @@ def export_pdf_hash(path: Path, fmt: str = "hashcat") -> str:
     if encrypt is None:
         raise EncryptedDocumentError(f"{path.name} has no /Encrypt dictionary")
 
-    r = _int_field(encrypt, "R")
-    v = _int_field(encrypt, "V")
-    p = _int_field(encrypt, "P")
-    length = _int_field(encrypt, "Length")
-    # Filter for Standard security handler only
-    filter_name = _name_field(encrypt, "Filter") or "Standard"
-    if filter_name not in {"Standard", "StandardCrypt"}:
-        raise EncryptedDocumentError(
-            f"{path.name}: unsupported security handler /Filter {filter_name}"
-        )
-
-    o_hex = _string_field_hex(encrypt, "O")
-    u_hex = _string_field_hex(encrypt, "U")
-    if not o_hex or not u_hex:
-        raise EncryptedDocumentError(f"{path.name}: missing /O or /U in Encrypt dict")
-
-    id_hex = _file_id_hex(raw) or ("00" * 16)
-    cfm = _name_field(encrypt, "CFM") or encrypt.get("CFM", "")
-    bits = _pdf_key_bits(length=length, r=r, cfm=str(cfm))
+    r, v, p, bits, o_hex, u_hex, id_hex = _pdf_hash_fields(path, raw, encrypt)
 
     if r in {2, 3, 4}:
-        # john/hashcat: $pdf$<V><R><bits><P><meta><id_len><id><u_len><u><o_len><o>
-        meta = 0
-        u_raw = bytes.fromhex(u_hex)
-        o_raw = bytes.fromhex(o_hex)
-        id_raw = bytes.fromhex(id_hex)
-        u_use = u_raw[:32] if len(u_raw) >= 32 else u_raw
-        o_use = o_raw[:32] if len(o_raw) >= 32 else o_raw
-        hash_body = (
-            f"$pdf${v or 2}*{r}*{bits}*{p if p is not None else 0}*{meta}*"
-            f"{len(id_raw)}*{id_raw.hex()}*"
-            f"{len(u_use)}*{u_use.hex()}*"
-            f"{len(o_use)}*{o_use.hex()}"
-        )
+        hash_body = _legacy_pdf_hash(r, v, p, bits, o_hex, u_hex, id_hex)
     elif r in {5, 6}:
-        oe = _string_field_hex(encrypt, "OE")
-        ue = _string_field_hex(encrypt, "UE")
-        perms = _string_field_hex(encrypt, "Perms")
-        if not (oe and ue and perms):
-            raise EncryptedDocumentError(
-                f"{path.name}: R={r} requires /OE /UE /Perms for hash export"
-            )
-        # hashcat 10700 / john pdf format for AES-256
-        hash_body = (
-            f"$pdf${v or 5}*{r}*256*{p if p is not None else 0}*1*"
-            f"16*{id_hex[:32]}*"
-            f"127*{u_hex[:254]}*"
-            f"127*{o_hex[:254]}*"
-            f"32*{ue[:64]}*"
-            f"32*{oe[:64]}*"
-            f"16*{perms[:32]}"
-        )
+        hash_body = _aes256_pdf_hash(path, encrypt, r, v, p, o_hex, u_hex, id_hex)
     else:
         raise EncryptedDocumentError(
             f"{path.name}: unsupported PDF revision R={r} for native hash export"
@@ -87,6 +41,72 @@ def export_pdf_hash(path: Path, fmt: str = "hashcat") -> str:
     if fmt == "john":
         return f"{path.name}:{hash_body}"
     return hash_body
+
+
+def _pdf_hash_fields(
+    path: Path, raw: bytes, encrypt: dict[str, str]
+) -> tuple[int | None, int | None, int | None, int, str, str, str]:
+    """Validate shared Standard-handler fields used by every hash revision."""
+    r = _int_field(encrypt, "R")
+    v = _int_field(encrypt, "V")
+    p = _int_field(encrypt, "P")
+    length = _int_field(encrypt, "Length")
+    filter_name = _name_field(encrypt, "Filter") or "Standard"
+    if filter_name not in {"Standard", "StandardCrypt"}:
+        raise EncryptedDocumentError(
+            f"{path.name}: unsupported security handler /Filter {filter_name}"
+        )
+    o_hex = _string_field_hex(encrypt, "O")
+    u_hex = _string_field_hex(encrypt, "U")
+    if not o_hex or not u_hex:
+        raise EncryptedDocumentError(f"{path.name}: missing /O or /U in Encrypt dict")
+    cfm = _name_field(encrypt, "CFM") or encrypt.get("CFM", "")
+    bits = _pdf_key_bits(length=length, r=r, cfm=str(cfm))
+    return r, v, p, bits, o_hex, u_hex, _file_id_hex(raw) or ("00" * 16)
+
+
+def _legacy_pdf_hash(
+    r: int,
+    v: int | None,
+    p: int | None,
+    bits: int,
+    o_hex: str,
+    u_hex: str,
+    id_hex: str,
+) -> str:
+    """Build the R2-R4 hashcat/john field sequence."""
+    u_raw = bytes.fromhex(u_hex)
+    o_raw = bytes.fromhex(o_hex)
+    id_raw = bytes.fromhex(id_hex)
+    u_use = u_raw[:32]
+    o_use = o_raw[:32]
+    return (
+        f"$pdf${v or 2}*{r}*{bits}*{p if p is not None else 0}*0*"
+        f"{len(id_raw)}*{id_raw.hex()}*{len(u_use)}*{u_use.hex()}*{len(o_use)}*{o_use.hex()}"
+    )
+
+
+def _aes256_pdf_hash(
+    path: Path,
+    encrypt: dict[str, str],
+    r: int,
+    v: int | None,
+    p: int | None,
+    o_hex: str,
+    u_hex: str,
+    id_hex: str,
+) -> str:
+    """Build the R5-R6 AES-256 hashcat/john field sequence."""
+    oe = _string_field_hex(encrypt, "OE")
+    ue = _string_field_hex(encrypt, "UE")
+    perms = _string_field_hex(encrypt, "Perms")
+    if not (oe and ue and perms):
+        raise EncryptedDocumentError(f"{path.name}: R={r} requires /OE /UE /Perms for hash export")
+    return (
+        f"$pdf${v or 5}*{r}*256*{p if p is not None else 0}*1*"
+        f"16*{id_hex[:32]}*127*{u_hex[:254]}*127*{o_hex[:254]}*"
+        f"32*{ue[:64]}*32*{oe[:64]}*16*{perms[:32]}"
+    )
 
 
 def _pdf_key_bits(*, length: int | None, r: int | None, cfm: str) -> int:
@@ -99,19 +119,23 @@ def _pdf_key_bits(*, length: int | None, r: int | None, cfm: str) -> int:
     if "AESV3" in cfm_u or (r is not None and r >= 5):
         return 256
     if "AESV2" in cfm_u or "AES" in cfm_u:
-        if length is None:
-            return 128
-        if length <= 32:  # bytes
-            return length * 8
-        return length  # already bits
-    # RC4 / default
+        return _aes_key_bits(length)
+    return _rc4_key_bits(length, r)
+
+
+def _aes_key_bits(length: int | None) -> int:
+    """Interpret PDF AES key length, which may be stored in bytes."""
     if length is None:
-        return 40 if (r is None or r <= 2) else 128
-    if length <= 32:
-        # Ambiguous: treat small values as bytes only for AES; RC4 uses 5..16 as bytes rarely
-        if length in {5, 16}:
-            return length * 8
-        return length
+        return 128
+    return length * 8 if length <= 32 else length
+
+
+def _rc4_key_bits(length: int | None, revision: int | None) -> int:
+    """Interpret legacy RC4 lengths while retaining their small-value convention."""
+    if length is None:
+        return 40 if revision is None or revision <= 2 else 128
+    if length in {5, 16}:
+        return length * 8
     return length
 
 
@@ -121,61 +145,108 @@ def _encrypt_dict_via_pikepdf(path: Path) -> dict[str, str] | None:
         import pikepdf
     except ImportError:
         return None
+    return _pikepdf_encrypt_or_raw(path, pikepdf)
+
+
+def _pikepdf_encrypt_or_raw(path: Path, pikepdf) -> dict[str, str] | None:
+    """Use pikepdf when it can open the file, otherwise retain raw-trailer fallback."""
     try:
-        # Open without password may fail; use empty password for owner-only
-        try:
-            pdf = pikepdf.open(path, password="")
-        except pikepdf.PasswordError:
-            # Still can read encryption params from trailer via open with allow
-            return _encrypt_from_raw_trailer(path)
-        try:
-            if not pdf.is_encrypted:
-                return None
-            # pikepdf exposes encryption via _encryption / trailer
-            enc = pdf.trailer.get("/Encrypt")
-            if enc is None:
-                return None
-            enc = enc.get_object() if hasattr(enc, "get_object") else enc
-            result: dict[str, str] = {}
-            for key in ("R", "V", "P", "Length", "Filter"):
-                if key in enc or f"/{key}" in [str(k) for k in enc.keys()]:
-                    try:
-                        val = enc[pikepdf.Name(f"/{key}")]
-                    except Exception:
-                        try:
-                            val = enc[f"/{key}"]
-                        except Exception:
-                            continue
-                    if key in {"R", "V", "P", "Length"}:
-                        result[key] = str(int(val))
-                    else:
-                        result[key] = str(val).lstrip("/")
-            for key in ("O", "U", "OE", "UE", "Perms"):
-                try:
-                    val = bytes(enc[pikepdf.Name(f"/{key}")])
-                    result[key] = "<" + val.hex() + ">"
-                except Exception:
-                    continue
-            # Nested crypt filter CFM (AESV2 / AESV3)
-            try:
-                cf = enc[pikepdf.Name("/CF")]
-                cf = cf.get_object() if hasattr(cf, "get_object") else cf
-                std = cf[pikepdf.Name("/StdCF")]
-                std = std.get_object() if hasattr(std, "get_object") else std
-                cfm = std[pikepdf.Name("/CFM")]
-                result["CFM"] = str(cfm).lstrip("/")
-                if "Length" not in result:
-                    try:
-                        result["Length"] = str(int(std[pikepdf.Name("/Length")]))
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            return result if "O" in result and "U" in result else None
-        finally:
-            pdf.close()
+        pdf = pikepdf.open(path, password="")
+    except pikepdf.PasswordError:
+        return _encrypt_from_raw_trailer(path)
     except Exception:
         return _encrypt_from_raw_trailer(path)
+    try:
+        return _opened_pikepdf_encrypt_dict(pdf, pikepdf)
+    except Exception:
+        return _encrypt_from_raw_trailer(path)
+    finally:
+        pdf.close()
+
+
+def _opened_pikepdf_encrypt_dict(pdf, pikepdf) -> dict[str, str] | None:
+    """Extract encryption fields from an already-open pikepdf document."""
+    if not pdf.is_encrypted:
+        return None
+    encrypt = pdf.trailer.get("/Encrypt")
+    if encrypt is None:
+        return None
+    result = _pikepdf_encrypt_fields(pikepdf, encrypt)
+    return result if "O" in result and "U" in result else None
+
+
+def _pikepdf_encrypt_fields(pikepdf, encrypt) -> dict[str, str]:
+    """Normalize pikepdf's encryption dictionary into raw-token strings."""
+    encrypt = _pikepdf_object(encrypt)
+    result = _pikepdf_scalar_fields(pikepdf, encrypt)
+    result.update(_pikepdf_binary_fields(pikepdf, encrypt))
+    _add_pikepdf_crypt_filter(pikepdf, encrypt, result)
+    return result
+
+
+def _pikepdf_object(value):
+    """Dereference a pikepdf indirect object when necessary."""
+    return value.get_object() if hasattr(value, "get_object") else value
+
+
+def _pikepdf_item(pikepdf, mapping, key: str):
+    """Read a PDF name with pikepdf and string-key compatibility."""
+    try:
+        return mapping[pikepdf.Name(f"/{key}")]
+    except Exception:
+        try:
+            return mapping[f"/{key}"]
+        except Exception:
+            return None
+
+
+def _pikepdf_scalar_fields(pikepdf, encrypt) -> dict[str, str]:
+    """Extract scalar revision, permission, length, and filter fields."""
+    result: dict[str, str] = {}
+    for key in ("R", "V", "P", "Length", "Filter"):
+        value = _pikepdf_item(pikepdf, encrypt, key)
+        if value is None:
+            continue
+        if key in {"R", "V", "P", "Length"}:
+            result[key] = str(int(value))
+        else:
+            result[key] = str(value).lstrip("/")
+    return result
+
+
+def _pikepdf_binary_fields(pikepdf, encrypt) -> dict[str, str]:
+    """Extract binary encryption fields as PDF-style hex strings."""
+    result: dict[str, str] = {}
+    for key in ("O", "U", "OE", "UE", "Perms"):
+        value = _pikepdf_item(pikepdf, encrypt, key)
+        if value is None:
+            continue
+        try:
+            result[key] = "<" + bytes(value).hex() + ">"
+        except Exception:
+            continue
+    return result
+
+
+def _add_pikepdf_crypt_filter(pikepdf, encrypt, result: dict[str, str]) -> None:
+    """Capture optional AES crypt-filter metadata without blocking raw fallback."""
+    crypt_filters = _pikepdf_item(pikepdf, encrypt, "CF")
+    if crypt_filters is None:
+        return
+    try:
+        standard = _pikepdf_item(pikepdf, _pikepdf_object(crypt_filters), "StdCF")
+        if standard is None:
+            return
+        standard = _pikepdf_object(standard)
+        cfm = _pikepdf_item(pikepdf, standard, "CFM")
+        if cfm is not None:
+            result["CFM"] = str(cfm).lstrip("/")
+        if "Length" not in result:
+            length = _pikepdf_item(pikepdf, standard, "Length")
+            if length is not None:
+                result["Length"] = str(int(length))
+    except Exception:
+        return
 
 
 def _encrypt_from_raw_trailer(path: Path) -> dict[str, str] | None:
@@ -185,38 +256,52 @@ def _encrypt_from_raw_trailer(path: Path) -> dict[str, str] | None:
 
 def _find_encrypt_dict(raw: bytes) -> dict[str, str] | None:
     """Very small PDF tokenizer: find /Encrypt dict body as key→value strings."""
-    # Prefer trailer reference: /Encrypt N M R
-    trailer_m = re.search(rb"trailer\s<<(.?)>>", raw, re.S | re.I)
-    encrypt_ref = None
-    if trailer_m:
-        tbody = trailer_m.group(1)
-        ref_m = re.search(rb"/Encrypt\s+(\d+)\s+(\d+)\s+R", tbody)
-        if ref_m:
-            encrypt_ref = (int(ref_m.group(1)), int(ref_m.group(2)))
-        elif re.search(rb"/Encrypt\s*<<", tbody):
-            # inline encrypt
-            return _parse_dict_body(_extract_inline_dict(tbody, b"/Encrypt"))
+    trailer_dict = _trailer_encrypt_dict(raw)
+    if trailer_dict is not None:
+        return trailer_dict
+    return _scan_standard_encrypt_dict(raw)
 
-    if encrypt_ref:
-        obj_m = re.search(
-            rf"{encrypt_ref[0]}\s+{encrypt_ref[1]}\s+obj".encode(),
-            raw,
-        )
-        if obj_m:
-            body = _extract_balanced_dict(raw, obj_m.end())
-            if body is not None:
-                parsed = _parse_dict_body(body)
-                if "O" in parsed and "U" in parsed:
-                    return parsed
 
-    # Fallback: scan for dicts that look like Standard security handler
+def _trailer_encrypt_dict(raw: bytes) -> dict[str, str] | None:
+    """Resolve an inline or indirect Encrypt dictionary referenced by the trailer."""
+    trailer = re.search(rb"trailer\s<<(.?)>>", raw, re.S | re.I)
+    if trailer is None:
+        return None
+    body = trailer.group(1)
+    reference = re.search(rb"/Encrypt\s+(\d+)\s+(\d+)\s+R", body)
+    if reference is not None:
+        return _referenced_encrypt_dict(raw, int(reference.group(1)), int(reference.group(2)))
+    if re.search(rb"/Encrypt\s*<<", body):
+        return _parse_dict_body(_extract_inline_dict(body, b"/Encrypt"))
+    return None
+
+
+def _referenced_encrypt_dict(
+    raw: bytes, object_number: int, generation: int
+) -> dict[str, str] | None:
+    """Read a trailer-referenced dictionary only when it has Standard hash fields."""
+    match = re.search(rf"{object_number}\s+{generation}\s+obj".encode(), raw)
+    if match is None:
+        return None
+    body = _extract_balanced_dict(raw, match.end())
+    if body is None:
+        return None
+    parsed = _parse_dict_body(body)
+    return parsed if "O" in parsed and "U" in parsed else None
+
+
+def _scan_standard_encrypt_dict(raw: bytes) -> dict[str, str] | None:
+    """Find the first dictionary that looks like a Standard security handler."""
     for m in re.finditer(rb"<<", raw):
         body = _extract_balanced_dict(raw, m.start())
-        if body is None:
-            continue
-        if b"/Filter" in body and b"/Standard" in body and b"/O" in body and b"/U" in body:
+        if body is not None and _is_standard_encrypt_dict(body):
             return _parse_dict_body(body)
     return None
+
+
+def _is_standard_encrypt_dict(body: bytes) -> bool:
+    """Identify the minimally required Standard-handler dictionary tokens."""
+    return all(token in body for token in (b"/Filter", b"/Standard", b"/O", b"/U"))
 
 
 def _extract_balanced_dict(raw: bytes, start: int) -> bytes | None:
@@ -305,46 +390,53 @@ def _name_field(d: dict[str, str], key: str) -> str | None:
 
 def _string_field_hex(d: dict[str, str], key: str) -> str | None:
     """Parse a PDF string field to hex for hash export."""
-    v = d.get(key)
-    if v is None:
+    value = d.get(key)
+    if value is None:
         return None
-    if v.startswith("<") and v.endswith(">"):
-        return v[1:-1].lower()
-    if v.startswith("(") and v.endswith(")"):
-        # PDF literal string → bytes → hex
-        out = bytearray()
-        raw = v.encode("latin-1")
-        # extract between first ( and last )
-        try:
-            start = raw.index(b"(") + 1
-            end = raw.rindex(b")")
-            payload = raw[start:end]
-        except ValueError:
-            return None
-        i = 0
-        while i < len(payload):
-            if payload[i] == 0x5C and i + 1 < len(payload):  # backslash
-                nxt = payload[i + 1]
-                escapes = {ord("n"): 10, ord("r"): 13, ord("t"): 9, ord("b"): 8, ord("f"): 12}
-                if nxt in escapes:
-                    out.append(escapes[nxt])
-                    i += 2
-                elif 0x30 <= nxt <= 0x37:  # octal
-                    j = i + 1
-                    octal = b""
-                    while j < len(payload) and len(octal) < 3 and 0x30 <= payload[j] <= 0x37:
-                        octal += bytes([payload[j]])
-                        j += 1
-                    out.append(int(octal, 8) & 0xFF)
-                    i = j
-                else:
-                    out.append(nxt)
-                    i += 2
-            else:
-                out.append(payload[i])
-                i += 1
-        return bytes(out).hex()
-    return None
+    if value.startswith("<") and value.endswith(">"):
+        return value[1:-1].lower()
+    return _literal_string_hex(value) if value.startswith("(") and value.endswith(")") else None
+
+
+def _literal_string_hex(value: str) -> str | None:
+    """Decode a PDF literal string's basic escapes into its hash bytes."""
+    raw = value.encode("latin-1")
+    try:
+        payload = raw[raw.index(b"(") + 1 : raw.rindex(b")")]
+    except ValueError:
+        return None
+    return _decode_pdf_literal(payload).hex()
+
+
+def _decode_pdf_literal(payload: bytes) -> bytes:
+    """Decode literal bytes, named escapes, and up to three-digit octal escapes."""
+    output = bytearray()
+    index = 0
+    while index < len(payload):
+        byte, index = _decode_pdf_literal_byte(payload, index)
+        output.append(byte)
+    return bytes(output)
+
+
+def _decode_pdf_literal_byte(payload: bytes, index: int) -> tuple[int, int]:
+    """Decode one plain or backslash-escaped literal byte."""
+    if payload[index] != 0x5C or index + 1 >= len(payload):
+        return payload[index], index + 1
+    escaped = payload[index + 1]
+    named = {ord("n"): 10, ord("r"): 13, ord("t"): 9, ord("b"): 8, ord("f"): 12}
+    if escaped in named:
+        return named[escaped], index + 2
+    if 0x30 <= escaped <= 0x37:
+        return _decode_octal_escape(payload, index + 1)
+    return escaped, index + 2
+
+
+def _decode_octal_escape(payload: bytes, start: int) -> tuple[int, int]:
+    """Decode a one-to-three digit octal escape starting at an octal byte."""
+    end = start
+    while end < len(payload) and end - start < 3 and 0x30 <= payload[end] <= 0x37:
+        end += 1
+    return int(payload[start:end], 8) & 0xFF, end
 
 
 def _file_id_hex(raw: bytes) -> str | None:

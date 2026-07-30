@@ -80,7 +80,6 @@ def unlock_document(
     source = Path(input_path)
     target = Path(output_path)
     inspection = classify_path(source)
-    fmt = inspection.document_format
 
     # IRM / Purview / RMS - detect early; cannot local-decrypt without license.
     from dietrich.crypto.irm import detect_irm, irm_block_message
@@ -89,45 +88,52 @@ def unlock_document(
     if irm.is_irm:
         raise EncryptedDocumentError(irm_block_message(irm))
 
-    if fmt == DocumentFormat.ENCRYPTED_OOXML or _is_msoffcrypto_encrypted(source):
+    return _maybe_resign(_unlock_for_format(source, target, options, inspection), options)
+
+
+def _unlock_for_format(
+    source: Path, target: Path, options: UnlockOptions, inspection: DocumentInspection
+) -> UnlockResult:
+    """Route a classified document to the matching unlock implementation."""
+    fmt = inspection.document_format
+    if _needs_office_decryption(source, fmt):
         if options.soft_only:
             raise EncryptedDocumentError(
                 "Document is open-password encrypted; soft-only mode cannot decrypt it."
             )
-        result = _unlock_encrypted_office(source, target, options)
-        return _maybe_resign(result, options)
-
-    if fmt == DocumentFormat.PDF:
-        result = _unlock_pdf(source, target, options, inspection)
-        return _maybe_resign(result, options)
-
-    if fmt in {
-        DocumentFormat.EXCEL_OOXML,
-        DocumentFormat.WORD_OOXML,
-        DocumentFormat.POWERPOINT_OOXML,
-    }:
-        result = unlock_ooxml_package(source, target, options)
-        return _maybe_resign(result, options)
-
+        return _unlock_encrypted_office(source, target, options)
+    if _is_pdf(source, fmt):
+        return _unlock_pdf(source, target, options, inspection)
+    if _is_ooxml(source, fmt):
+        return unlock_ooxml_package(source, target, options)
     if fmt == DocumentFormat.LEGACY_CFBF or source.suffix.lower() in LEGACY_SUFFIXES:
         from dietrich.legacy.binary_soft import unlock_binary_office
 
-        result = unlock_binary_office(source, target, options)
-        return _maybe_resign(result, options)
-
-    suffix = source.suffix.lower()
-    if suffix in OOXML_SUFFIXES:
-        result = unlock_ooxml_package(source, target, options)
-        return _maybe_resign(result, options)
-    if suffix in PDF_SUFFIXES:
-        result = _unlock_pdf(source, target, options, inspection)
-        return _maybe_resign(result, options)
-
+        return unlock_binary_office(source, target, options)
     raise UnsupportedFormatError(
         f"Unsupported format for {source.name} ({fmt.value}). "
         "Supported: xlsx/xlsm/docx/docm/pptx/pptm/pdf, binary xls/doc/ppt soft unlock, "
         "and open-password Office encryption."
     )
+
+
+def _needs_office_decryption(source: Path, fmt: DocumentFormat) -> bool:
+    """Return whether this input takes the open-password Office path."""
+    return fmt == DocumentFormat.ENCRYPTED_OOXML or _is_msoffcrypto_encrypted(source)
+
+
+def _is_pdf(source: Path, fmt: DocumentFormat) -> bool:
+    """Recognize classified and suffix-fallback PDF inputs."""
+    return fmt == DocumentFormat.PDF or source.suffix.lower() in PDF_SUFFIXES
+
+
+def _is_ooxml(source: Path, fmt: DocumentFormat) -> bool:
+    """Recognize classified and suffix-fallback OOXML inputs."""
+    return fmt in {
+        DocumentFormat.EXCEL_OOXML,
+        DocumentFormat.WORD_OOXML,
+        DocumentFormat.POWERPOINT_OOXML,
+    } or source.suffix.lower() in OOXML_SUFFIXES
 
 
 def _maybe_resign(result: UnlockResult, options: UnlockOptions) -> UnlockResult:
@@ -287,7 +293,6 @@ def _recover_password_ooxml(source: Path, options: UnlockOptions) -> str:
 
 def _recover_via_hashcat(source: Path, options: UnlockOptions, *, kind: str) -> str:
     """Export hash, run external hashcat, return cracked password or raise."""
-    from dietrich.crypto.hash_export import export_hash
     from dietrich.crypto.hashcat_runner import (
         run_hashcat_for_office,
         suggest_mode_from_hash,

@@ -10,6 +10,10 @@ formats may change before a stable release.
 
 ![Dietrich terminal interface](docs/screenshots/werkbank-tui-smoke.svg)
 
+[Open the static interface demo](https://sebastianspicker.github.io/dietrich/).
+The demo uses sanitized fixture data, cannot access local files, and marks all
+command-capable actions as simulated.
+
 ## Purpose and scope
 
 Dietrich distinguishes between two protection layers:

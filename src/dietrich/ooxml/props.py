@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
-from xml.etree import ElementTree
+
+from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
 
 from dietrich.ooxml.xml_strip import count_elements, local_name
 from dietrich.types import PartStats, ProtectedPart, UnlockOptions
@@ -16,26 +18,32 @@ def inspect_props_parts(names: list[str], read) -> list[ProtectedPart]:
     """Detect DocSecurity / MarkAsFinal package flags."""
     parts: list[ProtectedPart] = []
     if APP_PROPS in names:
-        data = read(APP_PROPS)
-        count = count_elements(data, "DocSecurity", APP_PROPS)
-        if count:
-            # Only report if non-zero
-            try:
-                root = ElementTree.fromstring(data)
-                for el in root.iter():
-                    if local_name(el.tag) == "DocSecurity" and (el.text or "").strip() not in {
-                        "",
-                        "0",
-                    }:
-                        parts.append(ProtectedPart(path=APP_PROPS, kind="DocSecurity", count=1))
-                        break
-            except ElementTree.ParseError:
-                parts.append(ProtectedPart(path=APP_PROPS, kind="DocSecurity", count=count))
+        doc_security = _inspect_doc_security(read(APP_PROPS))
+        if doc_security is not None:
+            parts.append(doc_security)
     if CUSTOM_PROPS in names:
         data = read(CUSTOM_PROPS)
         if b"MarkAsFinal" in data or b"_MarkAsFinal" in data:
             parts.append(ProtectedPart(path=CUSTOM_PROPS, kind="MarkAsFinal", count=1))
     return parts
+
+
+def _inspect_doc_security(data: bytes) -> ProtectedPart | None:
+    """Report a non-zero DocSecurity value without accepting unsafe XML."""
+    count = count_elements(data, "DocSecurity", APP_PROPS)
+    if not count:
+        return None
+    try:
+        root = ElementTree.fromstring(data)
+        for element in root.iter():
+            if (
+                local_name(element.tag) == "DocSecurity"
+                and (element.text or "").strip() not in {"", "0"}
+            ):
+                return ProtectedPart(path=APP_PROPS, kind="DocSecurity", count=1)
+    except (DefusedXmlException, ElementTree.ParseError):
+        return ProtectedPart(path=APP_PROPS, kind="DocSecurity", count=count)
+    return None
 
 
 def transform_props_part(
@@ -50,80 +58,81 @@ def transform_props_part(
     normalized = name.replace("\\", "/")
 
     if normalized == APP_PROPS:
-        # Prefer in-place text replace to preserve namespaces/prefixes.
-        import re
-
-        def _zero_docsec(match: re.Match[bytes]) -> bytes:
-            """Internal helper: _zero_docsec."""
-            return match.group(1) + b"0" + match.group(3)
-
-        new_data, n = re.subn(
-            rb"(<[^>]*DocSecurity[^>]*>)([^<]+)(</[^>]*DocSecurity>)",
-            _zero_docsec,
-            data,
-            count=1,
-            flags=re.I,
-        )
-        if n and new_data != data:
-            # Only count if original text was non-zero
-            m = re.search(
-                rb"<[^>]*DocSecurity[^>]*>([^<]+)</[^>]*DocSecurity>",
-                data,
-                flags=re.I,
-            )
-            if m and m.group(1).strip() not in {b"", b"0"}:
-                stats.add("markAsFinal", 1)
-                return new_data
-        return data
+        return _clear_doc_security(data, stats)
 
     if normalized == CUSTOM_PROPS:
-        # Remove property elements whose name attribute is MarkAsFinal / _MarkAsFinal.
-        if b"MarkAsFinal" not in data and b"_MarkAsFinal" not in data:
-            return data
-        try:
-            root = ElementTree.fromstring(data)
-        except ElementTree.ParseError:
-            # Fallback: remove property blocks containing MarkAsFinal
-            cleaned, n = re.subn(
-                rb"<[^>]*property[^>]*MarkAsFinal[^>]*/>|<property\b[^>]*MarkAsFinal.*?</property>",
-                b"",
-                data,
-                flags=re.I | re.S,
-            )
-            if n:
-                stats.add("markAsFinal", n)
-            return cleaned if n else data
-
-        removed = 0
-        parent_map = {c: p for p in root.iter() for c in p}
-        to_remove: list[ElementTree.Element] = []
-        for el in root.iter():
-            if local_name(el.tag) != "property":
-                continue
-            prop_name = el.attrib.get("name") or el.attrib.get(
-                "{http://schemas.openxmlformats.org/officeDocument/2006/custom-properties}name"
-            )
-            # Attributes may be unprefixed name=
-            if prop_name is None:
-                for key, val in el.attrib.items():
-                    if key.endswith("name") or key == "name":
-                        prop_name = val
-                        break
-            if prop_name and "MarkAsFinal" in prop_name:
-                to_remove.append(el)
-        for el in to_remove:
-            parent = parent_map.get(el)
-            if parent is not None:
-                parent.remove(el)
-                removed += 1
-        if removed:
-            stats.add("markAsFinal", removed)
-            body = ElementTree.tostring(root, encoding="utf-8", xml_declaration=False)
-            if data.lstrip().startswith(b"<?xml"):
-                decl_end = data.find(b"?>")
-                if decl_end != -1:
-                    return data[: decl_end + 2] + b"\n" + body
-            return body
-        return data
+        return _clear_custom_mark_as_final(data, stats)
 
     return data
+
+
+def _clear_doc_security(data: bytes, stats: PartStats) -> bytes:
+    """Set a non-zero DocSecurity tag to zero while preserving its prefix shape."""
+    pattern = rb"(<[^>]*DocSecurity[^>]*>)([^<]+)(</[^>]*DocSecurity>)"
+    match = re.search(pattern, data, flags=re.I)
+    if match is None or match.group(2).strip() in {b"", b"0"}:
+        return data
+    cleared = data[: match.start(2)] + b"0" + data[match.end(2) :]
+    stats.add("markAsFinal", 1)
+    return cleared
+
+
+def _clear_custom_mark_as_final(data: bytes, stats: PartStats) -> bytes:
+    """Remove custom-property MarkAsFinal flags, using a safe XML fallback."""
+    if b"MarkAsFinal" not in data and b"_MarkAsFinal" not in data:
+        return data
+    try:
+        return _remove_custom_properties(data, stats)
+    except (DefusedXmlException, ElementTree.ParseError):
+        return _remove_custom_properties_by_pattern(data, stats)
+
+
+def _remove_custom_properties(data: bytes, stats: PartStats) -> bytes:
+    """Remove matching custom-property elements from parsed XML."""
+    root = ElementTree.fromstring(data)
+    parent_map = {child: parent for parent in root.iter() for child in parent}
+    removed = _remove_mark_as_final_elements(root, parent_map)
+    if not removed:
+        return data
+    stats.add("markAsFinal", removed)
+    body = ElementTree.tostring(root, encoding="utf-8", xml_declaration=False)
+    declaration_end = data.find(b"?>") if data.lstrip().startswith(b"<?xml") else -1
+    return data[: declaration_end + 2] + b"\n" + body if declaration_end != -1 else body
+
+
+def _remove_mark_as_final_elements(root: ElementTree.Element, parent_map: dict) -> int:
+    """Remove marked property elements and return the number actually detached."""
+    removable = (element for element in root.iter() if _is_mark_as_final_property(element))
+    return sum(_remove_element(parent_map.get(element), element) for element in removable)
+
+
+def _remove_element(parent: ElementTree.Element | None, element: ElementTree.Element) -> int:
+    """Detach an element when it has a parent in the parsed XML tree."""
+    if parent is None:
+        return 0
+    parent.remove(element)
+    return 1
+
+
+def _is_mark_as_final_property(element: ElementTree.Element) -> bool:
+    """Return whether one custom-property element carries the MarkAsFinal flag."""
+    if local_name(element.tag) != "property":
+        return False
+    return any(
+        "MarkAsFinal" in value
+        for key, value in element.attrib.items()
+        if key == "name" or key.endswith("name")
+    )
+
+
+def _remove_custom_properties_by_pattern(data: bytes, stats: PartStats) -> bytes:
+    """Remove malformed XML property blocks containing MarkAsFinal markers."""
+    cleaned, removed = re.subn(
+        rb"<[^>]*property[^>]*MarkAsFinal[^>]*/>|<property\b[^>]*MarkAsFinal.*?</property>",
+        b"",
+        data,
+        flags=re.I | re.S,
+    )
+    if removed:
+        stats.add("markAsFinal", removed)
+    return cleaned if removed else data

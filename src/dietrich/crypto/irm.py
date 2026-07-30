@@ -28,69 +28,103 @@ def detect_irm(path: Path) -> IrmInfo:
     header = path.read_bytes()[:8]
     details: list[str] = []
 
-    # OLE / encrypted package path
     if header[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
-        try:
-            import olefile
+        result = _probe_ole_irm(path, details)
+        if result is not None:
+            return result
 
-            if not olefile.isOleFile(str(path)):
-                return IrmInfo(False, "none")
-            with olefile.OleFileIO(str(path)) as ole:
-                streams = {"/".join(s) for s in ole.listdir()}
-                # DRM / IRM indicators
-                # Standard Office open-password uses EncryptedPackage + EncryptionInfo
-                # without DRM transform - not IRM.
-                has_drm = any(
-                    "drm" in s.lower() or "irm" in s.lower() or "rightsmanagement" in s.lower()
-                    for s in streams
-                )
-                # DataSpaces Version / TransformInfo with DRM
-                for s in streams:
-                    low = s.lower()
-                    if "transforminfo" in low and "drm" in low:
-                        has_drm = True
-                    if "drmencrypted" in low:
-                        has_drm = True
-                if has_drm:
-                    details.append("OLE streams indicate DRM/IRM transform.")
-                    details.append(
-                        "Server-bound: needs Active Directory RMS / Azure IRM use license."
-                    )
-                    return IrmInfo(True, "ole_drm", tuple(details))
-                # EUL / license streams
-                if any(
-                    s.split("/")[-1].lower() == "eul" or s.lower().endswith("/eul") for s in streams
-                ):
-                    details.append("End-user license stream present (IRM).")
-                    return IrmInfo(True, "ole_drm", tuple(details))
-        except Exception as exc:
-            details.append(f"IRM probe limited: {exc}")
-
-    # ZIP OOXML with feature rights or custom IRM XML
     if header[:2] == b"PK":
-        try:
-            import zipfile
-
-            with zipfile.ZipFile(path) as zf:
-                names = [n.lower() for n in zf.namelist()]
-                for n in names:
-                    if "irm" in n or "rightsmanagement" in n or "drm" in n:
-                        details.append(f"Package part suggests IRM: {n}")
-                        return IrmInfo(True, "ooxml_irm", tuple(details))
-                # feature property bags
-                for n in zf.namelist():
-                    if n.endswith(".xml") and "customXml" in n:
-                        try:
-                            data = zf.read(n)[:4000].lower()
-                        except Exception:
-                            continue
-                        if b"rightsmanagement" in data or b"msipc" in data:
-                            details.append(f"customXml mentions rights management: {n}")
-                            return IrmInfo(True, "ooxml_irm", tuple(details))
-        except Exception as exc:
-            details.append(f"ZIP IRM probe limited: {exc}")
+        result = _probe_zip_irm(path, details)
+        if result is not None:
+            return result
 
     return IrmInfo(False, "none", tuple(details))
+
+
+def _probe_ole_irm(path: Path, details: list[str]) -> IrmInfo | None:
+    """Probe OLE streams while retaining best-effort IRM diagnostics."""
+    try:
+        import olefile
+
+        if not olefile.isOleFile(str(path)):
+            return None
+        with olefile.OleFileIO(str(path)) as ole:
+            streams = {"/".join(stream) for stream in ole.listdir()}
+    except Exception as exc:
+        details.append(f"IRM probe limited: {exc}")
+        return None
+    if _has_ole_drm_marker(streams):
+        details.extend(
+            (
+                "OLE streams indicate DRM/IRM transform.",
+                "Server-bound: needs Active Directory RMS / Azure IRM use license.",
+            )
+        )
+        return IrmInfo(True, "ole_drm", tuple(details))
+    if any(_is_eul_stream(stream) for stream in streams):
+        details.append("End-user license stream present (IRM).")
+        return IrmInfo(True, "ole_drm", tuple(details))
+    return None
+
+
+def _has_ole_drm_marker(streams: set[str]) -> bool:
+    """Recognize DRM transform and rights-management OLE stream names."""
+    for stream in streams:
+        name = stream.lower()
+        if any(marker in name for marker in ("drm", "irm", "rightsmanagement")):
+            return True
+        if "transforminfo" in name and "drm" in name:
+            return True
+        if "drmencrypted" in name:
+            return True
+    return False
+
+
+def _is_eul_stream(stream: str) -> bool:
+    """Return whether an OLE stream is an end-user license marker."""
+    name = stream.lower()
+    return name.split("/")[-1] == "eul" or name.endswith("/eul")
+
+
+def _probe_zip_irm(path: Path, details: list[str]) -> IrmInfo | None:
+    """Probe OOXML package names and custom XML for rights markers."""
+    try:
+        import zipfile
+
+        with zipfile.ZipFile(path) as archive:
+            names = archive.namelist()
+            part = next((name for name in names if _has_irm_marker(name)), None)
+            if part is not None:
+                details.append(f"Package part suggests IRM: {part.lower()}")
+                return IrmInfo(True, "ooxml_irm", tuple(details))
+            part = _custom_xml_rights_part(archive, names)
+    except Exception as exc:
+        details.append(f"ZIP IRM probe limited: {exc}")
+        return None
+    if part is not None:
+        details.append(f"customXml mentions rights management: {part}")
+        return IrmInfo(True, "ooxml_irm", tuple(details))
+    return None
+
+
+def _has_irm_marker(part_name: str) -> bool:
+    """Check a package member name for recognized rights-management markers."""
+    name = part_name.lower()
+    return any(marker in name for marker in ("irm", "rightsmanagement", "drm"))
+
+
+def _custom_xml_rights_part(archive, names: list[str]) -> str | None:
+    """Find custom XML that explicitly references rights-management metadata."""
+    for name in names:
+        if not (name.endswith(".xml") and "customXml" in name):
+            continue
+        try:
+            data = archive.read(name)[:4000].lower()
+        except Exception:
+            continue
+        if b"rightsmanagement" in data or b"msipc" in data:
+            return name
+    return None
 
 
 def irm_block_message(info: IrmInfo) -> str:

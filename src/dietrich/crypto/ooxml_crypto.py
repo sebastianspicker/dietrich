@@ -7,6 +7,7 @@ decrypt-to-path, and office2john-compatible ``$office$*`` hash lines.
 from __future__ import annotations
 
 import binascii
+import io
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,7 +62,7 @@ def open_office(path: Path):
         handle.close()
         raise
     # Keep handle alive on the office object for subsequent ops.
-    office._dietrich_handle = handle  # noqa: SLF001
+    office._dietrich_handle = handle
     return office
 
 
@@ -77,88 +78,126 @@ def describe_encryption(path: Path) -> OfficeEncryptionInfo:
     office = open_office(path)
     try:
         if not office.is_encrypted():
-            return OfficeEncryptionInfo(
-                scheme="none",
-                version_label="none",
-                hash_algorithm=None,
-                cipher_bits=None,
-                spin_count=None,
-                salt_size=None,
-                cost_class="none",
-                hashcat_mode=None,
-                notes=("File is not open-password encrypted.",),
-            )
+            return _unencrypted_info()
 
         otype = getattr(office, "type", None) or "unknown"
         info = getattr(office, "info", None) or {}
-        notes: list[str] = []
-
         if otype == "agile":
-            algo = str(info.get("passwordHashAlgorithm") or "")
-            bits = int(info.get("passwordKeyBits") or 0) or None
-            spin = int(info.get("spinValue") or 0) or None
-            salt = info.get("passwordSalt") or b""
-            if algo.upper() == "SHA512":
-                version = "2013"
-                mode = 9600
-            elif algo.upper() == "SHA1":
-                version = "2010"
-                mode = 9500
-            else:
-                version = "agile"
-                mode = None
-                notes.append(f"Unsupported hash algorithm for hash export: {algo}")
-            cost = "expensive" if (spin or 0) >= 100_000 else "moderate"
-            if spin:
-                notes.append(
-                    f"AES Agile encryption; spinCount={spin}. "
-                    "CPU dictionary is slow - prefer GPU (hashcat) after --export-hash."
-                )
-            return OfficeEncryptionInfo(
-                scheme="agile",
-                version_label=version,
-                hash_algorithm=algo or None,
-                cipher_bits=bits,
-                spin_count=spin,
-                salt_size=len(salt) if salt else None,
-                cost_class=cost,
-                hashcat_mode=mode,
-                notes=tuple(notes),
-            )
-
+            return _agile_encryption_info(info)
         if otype == "standard":
-            # ECMA-376 Standard / Office 2007-style
-            notes.append("Standard ECMA-376 encryption (Office 2007-class).")
-            return OfficeEncryptionInfo(
-                scheme="standard",
-                version_label="2007",
-                hash_algorithm=None,
-                cipher_bits=None,
-                spin_count=None,
-                salt_size=16,
-                cost_class="moderate",
-                hashcat_mode=9400,
-                notes=tuple(notes),
-            )
-
-        notes.append(f"Encrypted Office scheme type={otype!r}.")
-        cost = "moderate"
-        if otype in {"rc4", "rc4cryptoapi", "xor"}:
-            cost = "trivial"
-            notes.append("Legacy weak scheme - local brute/dictionary often sufficient.")
-        return OfficeEncryptionInfo(
-            scheme=str(otype),
-            version_label=str(otype),
-            hash_algorithm=None,
-            cipher_bits=None,
-            spin_count=None,
-            salt_size=None,
-            cost_class=cost,
-            hashcat_mode=None,
-            notes=tuple(notes),
-        )
+            return _standard_encryption_info()
+        return _unknown_encryption_info(otype)
     finally:
         close_office(office)
+
+
+def _unencrypted_info() -> OfficeEncryptionInfo:
+    """Describe a recognized Office container without open-password encryption."""
+    return OfficeEncryptionInfo(
+        scheme="none",
+        version_label="none",
+        hash_algorithm=None,
+        cipher_bits=None,
+        spin_count=None,
+        salt_size=None,
+        cost_class="none",
+        hashcat_mode=None,
+        notes=("File is not open-password encrypted.",),
+    )
+
+
+def _agile_encryption_info(info: dict) -> OfficeEncryptionInfo:
+    """Describe Agile encryption fields and map supported hashcat modes."""
+    algorithm, bits, spin, salt = _agile_fields(info)
+    version, mode = _agile_version_and_mode(algorithm)
+    notes = _agile_notes(algorithm, spin)
+    return OfficeEncryptionInfo(
+        scheme="agile",
+        version_label=version,
+        hash_algorithm=algorithm or None,
+        cipher_bits=bits,
+        spin_count=spin,
+        salt_size=_agile_salt_size(salt),
+        cost_class=_agile_cost_class(spin),
+        hashcat_mode=mode,
+        notes=tuple(notes),
+    )
+
+
+def _agile_fields(info: dict) -> tuple[str, int | None, int | None, bytes]:
+    """Normalize optional Agile EncryptionInfo fields into stable value types."""
+    algorithm = str(info.get("passwordHashAlgorithm") or "")
+    bits = int(info.get("passwordKeyBits") or 0) or None
+    spin = int(info.get("spinValue") or 0) or None
+    return algorithm, bits, spin, info.get("passwordSalt") or b""
+
+
+def _agile_salt_size(salt: bytes) -> int | None:
+    """Return a reported salt size only when EncryptionInfo supplied a salt."""
+    return len(salt) if salt else None
+
+
+def _agile_cost_class(spin: int | None) -> str:
+    """Classify Agile work factor for caller-facing recovery guidance."""
+    return "expensive" if (spin or 0) >= 100_000 else "moderate"
+
+
+def _agile_version_and_mode(algorithm: str) -> tuple[str, int | None]:
+    """Map known Agile hash algorithms to Office versions and hashcat modes."""
+    if algorithm.upper() == "SHA512":
+        return "2013", 9600
+    if algorithm.upper() == "SHA1":
+        return "2010", 9500
+    return "agile", None
+
+
+def _agile_notes(algorithm: str, spin: int | None) -> list[str]:
+    """Produce user-facing notes for Agile capability and cost."""
+    notes: list[str] = []
+    if _agile_version_and_mode(algorithm)[1] is None:
+        notes.append(f"Unsupported hash algorithm for hash export: {algorithm}")
+    if spin:
+        notes.append(
+            f"AES Agile encryption; spinCount={spin}. "
+            "CPU dictionary is slow - prefer GPU (hashcat) after --export-hash."
+        )
+    return notes
+
+
+def _standard_encryption_info() -> OfficeEncryptionInfo:
+    """Describe ECMA-376 Standard encryption."""
+    return OfficeEncryptionInfo(
+        scheme="standard",
+        version_label="2007",
+        hash_algorithm=None,
+        cipher_bits=None,
+        spin_count=None,
+        salt_size=16,
+        cost_class="moderate",
+        hashcat_mode=9400,
+        notes=("Standard ECMA-376 encryption (Office 2007-class).",),
+    )
+
+
+def _unknown_encryption_info(otype: object) -> OfficeEncryptionInfo:
+    """Describe encrypted Office types without a dedicated implementation."""
+    scheme = str(otype)
+    notes = [f"Encrypted Office scheme type={otype!r}."]
+    cost = "moderate"
+    if otype in {"rc4", "rc4cryptoapi", "xor"}:
+        cost = "trivial"
+        notes.append("Legacy weak scheme - local brute/dictionary often sufficient.")
+    return OfficeEncryptionInfo(
+        scheme=scheme,
+        version_label=scheme,
+        hash_algorithm=None,
+        cipher_bits=None,
+        spin_count=None,
+        salt_size=None,
+        cost_class=cost,
+        hashcat_mode=None,
+        notes=tuple(notes),
+    )
 
 
 def try_password(path: Path, password: str) -> bool:
@@ -168,25 +207,12 @@ def try_password(path: Path, password: str) -> bool:
         if not office.is_encrypted():
             return True
         try:
-            office.load_key(password=password, verify_password=True)
+            _load_office_key(office, password, verify_only=True)
             return True
-        except TypeError:
-            # Older msoffcrypto without verify_password
-            try:
-                office.load_key(password=password)
-                import io
-
-                sink = io.BytesIO()
-                office.decrypt(sink)
-                return True
-            except (ValueError, OSError, RuntimeError):
-                return False
         except (ValueError, OSError, RuntimeError):
             return False
         except Exception as exc:
-            # msoffcrypto raises InvalidKeyError (subclass of Exception)
-            name = type(exc).__name__
-            if "Key" in name or "Password" in name or "Invalid" in name:
+            if _is_invalid_key_error(exc):
                 return False
             raise
     finally:
@@ -201,13 +227,9 @@ def decrypt_to(path: Path, password: str, output_path: Path) -> None:
             output_path.write_bytes(path.read_bytes())
             return
         try:
-            try:
-                office.load_key(password=password, verify_password=True)
-            except TypeError:
-                office.load_key(password=password)
+            _load_office_key(office, password, verify_only=False)
         except Exception as exc:
-            name = type(exc).__name__
-            if "Key" in name or "Password" in name or "Invalid" in name:
+            if _is_invalid_key_error(exc):
                 raise EncryptedDocumentError(
                     "incorrect password for encrypted Office file"
                 ) from exc
@@ -219,6 +241,22 @@ def decrypt_to(path: Path, password: str, output_path: Path) -> None:
                 raise EncryptedDocumentError(f"decrypt failed: {exc}") from exc
     finally:
         close_office(office)
+
+
+def _load_office_key(office, password: str, *, verify_only: bool) -> None:
+    """Use modern verification when available and decrypt to a sink on older releases."""
+    try:
+        office.load_key(password=password, verify_password=True)
+    except TypeError:
+        office.load_key(password=password)
+        if verify_only:
+            office.decrypt(io.BytesIO())
+
+
+def _is_invalid_key_error(exc: Exception) -> bool:
+    """Recognize msoffcrypto's version-dependent invalid-password exception names."""
+    name = type(exc).__name__
+    return "Key" in name or "Password" in name or "Invalid" in name
 
 
 def export_hash_line(path: Path, fmt: str = "hashcat") -> str:
@@ -235,48 +273,52 @@ def export_hash_line(path: Path, fmt: str = "hashcat") -> str:
         if not office.is_encrypted():
             raise EncryptedDocumentError(f"{path.name} is not open-password encrypted")
 
-        otype = getattr(office, "type", None)
-        info = getattr(office, "info", None) or {}
-
-        if otype == "agile":
-            algo = str(info.get("passwordHashAlgorithm") or "")
-            if algo.upper() == "SHA512":
-                version = 2013
-            elif algo.upper() == "SHA1":
-                version = 2010
-            else:
-                raise EncryptedDocumentError(f"unsupported Agile hash algorithm for export: {algo}")
-            spin = int(info["spinValue"])
-            key_bits = int(info["passwordKeyBits"])
-            salt = bytes(info["passwordSalt"])
-            enc_ver = bytes(info["encryptedVerifierHashInput"])
-            enc_hash = bytes(info["encryptedVerifierHashValue"])
-            salt_size = len(salt)
-            # office2john uses first 32 bytes of encryptedVerifierHash (64 hex chars).
-            hash_body = (
-                f"$office${version}{spin}{key_bits}{salt_size}*"
-                f"{binascii.hexlify(salt).decode('ascii')}*"
-                f"{binascii.hexlify(enc_ver).decode('ascii')}*"
-                f"{binascii.hexlify(enc_hash[:32]).decode('ascii')}"
-            )
-        elif otype == "standard":
-            hash_body = _export_standard_hash_from_ole(path)
-        else:
-            # Try standard OLE parse before giving up (some types still use EncryptionInfo).
-            try:
-                hash_body = _export_standard_hash_from_ole(path)
-            except EncryptedDocumentError:
-                raise EncryptedDocumentError(
-                    f"hash export not supported for scheme type={otype!r}; "
-                    "use John the Ripper office2john.py for this file."
-                ) from None
-
-        if fmt == "john":
-            return f"{path.name}:{hash_body}"
-        # hashcat: no filename prefix
-        return hash_body
+        hash_body = _office_hash_body(office, path)
+        return f"{path.name}:{hash_body}" if fmt == "john" else hash_body
     finally:
         close_office(office)
+
+
+def _office_hash_body(office, path: Path) -> str:
+    """Build a native Agile hash or delegate Standard and legacy types to OLE parsing."""
+    otype = getattr(office, "type", None)
+    if otype == "agile":
+        return _agile_hash_body(getattr(office, "info", None) or {})
+    try:
+        return _export_standard_hash_from_ole(path)
+    except EncryptedDocumentError:
+        if otype == "standard":
+            raise
+        raise EncryptedDocumentError(
+            f"hash export not supported for scheme type={otype!r}; "
+            "use John the Ripper office2john.py for this file."
+        ) from None
+
+
+def _agile_hash_body(info: dict) -> str:
+    """Format an Agile EncryptionInfo mapping as an office2john-compatible hash."""
+    algorithm = str(info.get("passwordHashAlgorithm") or "")
+    version = _agile_hash_version(algorithm)
+    spin = int(info["spinValue"])
+    key_bits = int(info["passwordKeyBits"])
+    salt = bytes(info["passwordSalt"])
+    encrypted_verifier = bytes(info["encryptedVerifierHashInput"])
+    encrypted_hash = bytes(info["encryptedVerifierHashValue"])
+    return (
+        f"$office${version}{spin}{key_bits}{len(salt)}*"
+        f"{binascii.hexlify(salt).decode('ascii')}*"
+        f"{binascii.hexlify(encrypted_verifier).decode('ascii')}*"
+        f"{binascii.hexlify(encrypted_hash[:32]).decode('ascii')}"
+    )
+
+
+def _agile_hash_version(algorithm: str) -> int:
+    """Map supported Agile password hashes to Office hashcat family versions."""
+    if algorithm.upper() == "SHA512":
+        return 2013
+    if algorithm.upper() == "SHA1":
+        return 2010
+    raise EncryptedDocumentError(f"unsupported Agile hash algorithm for export: {algorithm}")
 
 
 def _export_standard_hash_from_ole(path: Path) -> str:
