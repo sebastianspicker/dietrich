@@ -106,7 +106,7 @@ class DietrichApp(App[None]):
 
     def _log(self, message: str) -> None:
         """Append one line to the activity log."""
-        timestamp = datetime.now().strftime("%H:%M:%S")
+        timestamp = datetime.now().time().isoformat(timespec="seconds")
         self.query_one("#log", Log).write_line(f"{timestamp}  {message}")
 
     def _refresh_recent_list(self) -> None:
