@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Static, non-operational demonstration of the Dietrich terminal interface.">
+    <meta name="theme-color" content="#12161c">
+    <title>Dietrich · static interface demo</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#workbench">Skip to demo</a>
+    <header class="brand-row">
+      <div>
+        <p class="brand-name">⌁&nbsp; DIETRICH</p>
+        <p class="brand-subtitle">the office picklock · authorized use only</p>
+      </div>
+      <p class="brand-meta">ALPHA 0.4.0a4 · STATIC DEMO</p>
+    </header>
+
+    <aside class="demo-notice" aria-label="Simulation notice">
+      <strong>SIMULATION ONLY</strong>
+      <span>This page uses sanitized fixture names. It cannot access, inspect, change, or upload files.</span>
+      <a href="https://github.com/sebastianspicker/dietrich">View source</a>
+    </aside>
+
+    <div class="authorized-plaque">
+      AUTHORIZED USE ONLY · Documents you own or may modify · Soft locks ≠ encryption · IRM / Purview requires a valid license
+    </div>
+
+    <main class="workbench" id="workbench">
+      <nav class="session-rail" aria-label="Sanitized demo fixtures">
+        <p class="rail-heading">SESSION · fixtures</p>
+        <div class="fixture-list" role="list">
+          <button class="fixture is-selected" type="button" data-fixture="soft" aria-pressed="true">
+            <span>board_report.xlsx</span>
+            <small>worksheet locks</small>
+          </button>
+          <button class="fixture" type="button" data-fixture="signed" aria-pressed="false">
+            <span>signed_budget.xlsx</span>
+            <small>signed package</small>
+          </button>
+          <button class="fixture" type="button" data-fixture="encrypted" aria-pressed="false">
+            <span>vault_notes.xlsx</span>
+            <small>open password</small>
+          </button>
+          <button class="fixture" type="button" data-fixture="pdf" aria-pressed="false">
+            <span>permissions.pdf</span>
+            <small>owner restrictions</small>
+          </button>
+        </div>
+        <p class="rail-foot"><span aria-hidden="true">●</span> ready · no network</p>
+      </nav>
+
+      <section class="main-column" aria-label="Dietrich click-through simulation">
+        <p class="section-label">DOCUMENT</p>
+        <div class="path-row">
+          <div class="path-display" id="input-path">fixtures/board_report.xlsx</div>
+          <span class="file-kind" id="file-kind">XLSX</span>
+          <button class="action inspect-action" type="button" id="inspect">Inspect <small>SIMULATED</small></button>
+        </div>
+
+        <section class="dossier state-info" id="dossier" aria-live="polite" aria-atomic="true">
+          <div class="dossier-header">
+            <h1 id="dossier-heading">READY TO INSPECT</h1>
+            <p id="dossier-meta">SIGNED&nbsp; -<br>IRM GATE&nbsp; ACTIVE</p>
+          </div>
+          <p id="dossier-body">Choose a sanitized fixture, then run the simulated inspection.<br>Next · Inspect the selected fixture.</p>
+        </section>
+
+        <p class="section-label">OUTPUT</p>
+        <div class="output-row">
+          <div class="path-display" id="output-path">fixtures/board_report_unprotected.xlsx</div>
+          <label class="overwrite-control">
+            <input type="checkbox" id="overwrite">
+            <span>OVERWRITE <small>SIMULATED</small></span>
+            <em>Preserve original · side-by-side by default</em>
+          </label>
+          <button class="action unlock-action" type="button" id="unlock">Unlock working copy <small>SIMULATED</small></button>
+        </div>
+
+        <div class="utility-row">
+          <details class="advanced">
+            <summary>Advanced · password · wordlist · signatures · hashcat <small>SIMULATED</small></summary>
+            <div class="advanced-fields">
+              <label>Password <input type="password" value="demo-only" aria-label="Simulated password"></label>
+              <label><input type="checkbox" id="strip-signatures"> Strip signatures</label>
+              <label><input type="checkbox"> Soft-only</label>
+              <label><input type="checkbox"> Unlock VBA</label>
+              <p>No values leave this page or invoke Dietrich.</p>
+            </div>
+          </details>
+          <button class="action secondary-action" type="button" id="export">Export hash <small>SIMULATED</small></button>
+          <button class="action secondary-action" type="button" id="reset">Reset demo</button>
+        </div>
+
+        <section class="activity-panel" aria-labelledby="activity-heading">
+          <div class="activity-header">
+            <h2 class="section-label" id="activity-heading">ACTIVITY</h2>
+            <span id="session-state">READY</span>
+          </div>
+          <ol class="activity-log" id="activity-log" aria-live="polite">
+            <li><time>00:00:00</time> demo ready · fixture data only · no commands run</li>
+          </ol>
+        </section>
+      </section>
+    </main>
+
+    <footer class="key-footer" aria-label="Demo shortcuts">
+      <span><kbd>I</kbd> Inspect <small>SIMULATED</small></span>
+      <span><kbd>U</kbd> Unlock <small>SIMULATED</small></span>
+      <span><kbd>E</kbd> Export hash <small>SIMULATED</small></span>
+      <span><kbd>R</kbd> Reset</span>
+    </footer>
+  </body>
+</html>
