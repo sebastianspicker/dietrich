@@ -148,6 +148,11 @@ class DietrichApp(App[None]):
         foot = "● working · no network" if busy else "● ready · no network"
         self.query_one("#session-foot", Static).update(foot)
 
+    @property
+    def is_busy(self) -> bool:
+        """Return whether a background document operation is running."""
+        return self._busy
+
     def _input_path(self) -> Path | None:
         """Return a validated existing file path, or log+show an error and return None."""
         raw = self.query_one("#input-path", Input).value.strip()
@@ -286,7 +291,7 @@ class DietrichApp(App[None]):
         except DietrichError as exc:
             self.call_from_thread(self._inspect_failed, str(exc))
             return
-        except Exception as exc:
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
             self.call_from_thread(self._inspect_failed, f"unexpected: {exc}")
             return
         self.call_from_thread(self._inspect_ok, inspection)
@@ -345,7 +350,7 @@ class DietrichApp(App[None]):
         except DietrichError as exc:
             self.call_from_thread(self._unlock_failed, str(exc))
             return
-        except Exception as exc:
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
             self.call_from_thread(self._unlock_failed, f"unexpected: {exc}")
             return
         self.call_from_thread(self._unlock_ok, result)
@@ -384,7 +389,7 @@ class DietrichApp(App[None]):
         except DietrichError as exc:
             self.call_from_thread(self._export_done, f"export-hash error: {exc}")
             return
-        except Exception as exc:
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
             self.call_from_thread(self._export_done, f"export-hash unexpected: {exc}")
             return
         display = line if len(line) <= 160 else line[:140] + "…"
