@@ -5,8 +5,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import zipfile
+from html import escape as escape_html
 from pathlib import Path
-from xml.sax.saxutils import escape
 
 from dietrich.errors import MissingDependencyError, OutputExistsError
 
@@ -119,7 +119,7 @@ def _build_manifest_xml(references: list[tuple[str, str]]) -> str:
         # Package-relative URI
         uri = "/" + name.lstrip("/")
         refs.append(
-            f'<Reference URI="{escape(uri)}">'
+            f'<Reference URI="{escape_html(uri, quote=False)}">'
             f"<DigestMethod Algorithm="
             f'"http://www.w3.org/2001/04/xmlenc#sha256"/>'
             f"<DigestValue>{digest}</DigestValue>"

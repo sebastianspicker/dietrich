@@ -9,7 +9,8 @@ from __future__ import annotations
 import itertools
 import string
 from collections.abc import Callable, Iterator
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import CancelledError, ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
 from dietrich.errors import EncryptedDocumentError
@@ -114,7 +115,7 @@ def run_attack(verifier: VerifierFn, options: AttackOptions) -> AttackResult:
                     candidates_tried=tried,
                     message="password found",
                 )
-        except Exception:
+        except (EncryptedDocumentError, OSError, RuntimeError, TypeError, ValueError):
             continue
     return AttackResult(
         success=False,
@@ -132,7 +133,7 @@ def _try_ooxml_password(args: tuple[str, str]) -> str | None:
     try:
         if try_password(Path(path_str), password):
             return password
-    except Exception:
+    except (EncryptedDocumentError, OSError, RuntimeError, TypeError, ValueError):
         return None
     return None
 
@@ -145,7 +146,7 @@ def _try_pdf_password(args: tuple[str, str]) -> str | None:
     try:
         if try_password(Path(path_str), password):
             return password
-    except Exception:
+    except (EncryptedDocumentError, OSError, RuntimeError, TypeError, ValueError):
         return None
     return None
 
@@ -186,7 +187,15 @@ def _run_parallel_file_attack(
         for tried, future in enumerate(as_completed(futures), start=1):
             try:
                 result = future.result()
-            except Exception:
+            except (
+                BrokenProcessPool,
+                CancelledError,
+                EncryptedDocumentError,
+                OSError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ):
                 result = None
             if result is not None:
                 for pending in futures:

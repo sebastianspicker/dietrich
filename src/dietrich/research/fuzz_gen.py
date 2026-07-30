@@ -1,4 +1,8 @@
-"""Experimental local-lab OOXML mutant generators (not a product unlock path)."""
+"""Experimental local-lab OOXML mutant generators (not a product unlock path).
+
+The seeded generator intentionally makes a fuzz case reproducible. It is never
+used for passwords, keys, or any other security-sensitive value.
+"""
 
 from __future__ import annotations
 

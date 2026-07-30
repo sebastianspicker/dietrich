@@ -331,7 +331,7 @@ def _print_inspection(inspection: DocumentInspection) -> None:
 
         irm = detect_irm(inspection.input_path)
         print(f"IRM/RMS: {'yes (' + irm.kind + ')' if irm.is_irm else 'no'}")
-    except Exception:
+    except (AttributeError, OSError, TypeError, ValueError):
         print("IRM/RMS: unknown")
     print("Strategies:")
     for strategy in inspection.strategies:
