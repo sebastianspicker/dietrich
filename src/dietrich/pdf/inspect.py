@@ -50,7 +50,7 @@ def inspect_pdf(path: Path) -> DocumentInspection:
         owner_restrictions = True
         strategies.extend(["crypto:pdf_password", "crypto:wordlist", "crypto:export_hash"])
         notes.append("User password required to open this PDF.")
-    except Exception as exc:
+    except (OSError, pikepdf.PdfError, TypeError, ValueError) as exc:
         notes.append(f"PDF inspect limited: {exc}")
 
     return DocumentInspection(

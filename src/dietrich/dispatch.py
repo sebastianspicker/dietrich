@@ -15,6 +15,7 @@ from dietrich.crypto.hash_export import export_hash
 from dietrich.errors import (
     EncryptedDocumentError,
     InvalidDocumentError,
+    MissingDependencyError,
     PasswordNotFoundError,
     UnsupportedFormatError,
 )
@@ -178,7 +179,7 @@ def _is_msoffcrypto_encrypted(path: Path) -> bool:
         from dietrich.crypto.ooxml_crypto import is_encrypted_office_file
 
         return is_encrypted_office_file(path)
-    except Exception:
+    except (AttributeError, MissingDependencyError, OSError, TypeError, ValueError):
         return False
 
 

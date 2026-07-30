@@ -9,7 +9,7 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
-from dietrich.errors import InvalidDocumentError
+from dietrich.errors import EncryptedDocumentError, InvalidDocumentError, MissingDependencyError
 from dietrich.types import DocumentFormat, DocumentInspection
 
 CFBF_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
@@ -135,7 +135,15 @@ def _cfbf_encryption_metadata(path: Path, encrypted: bool, notes: list[str], str
         if meta.hashcat_mode:
             strategies.append(f"crypto:hashcat_mode_{meta.hashcat_mode}")
         return meta.scheme, meta.version_label, meta.spin_count, meta.cost_class, meta.hashcat_mode
-    except Exception as exc:
+    except (
+        AttributeError,
+        EncryptedDocumentError,
+        KeyError,
+        MissingDependencyError,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as exc:
         notes.append(f"Encryption metadata limited: {exc}")
         return None, None, None, None, None
 

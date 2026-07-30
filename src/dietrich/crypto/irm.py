@@ -5,6 +5,7 @@ Detection only - Dietrich will not fake a decrypt without a use license.
 
 from __future__ import annotations
 
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -50,7 +51,7 @@ def _probe_ole_irm(path: Path, details: list[str]) -> IrmInfo | None:
             return None
         with olefile.OleFileIO(str(path)) as ole:
             streams = {"/".join(stream) for stream in ole.listdir()}
-    except Exception as exc:
+    except (AttributeError, ImportError, OSError, TypeError, ValueError) as exc:
         details.append(f"IRM probe limited: {exc}")
         return None
     if _has_ole_drm_marker(streams):
@@ -89,8 +90,6 @@ def _is_eul_stream(stream: str) -> bool:
 def _probe_zip_irm(path: Path, details: list[str]) -> IrmInfo | None:
     """Probe OOXML package names and custom XML for rights markers."""
     try:
-        import zipfile
-
         with zipfile.ZipFile(path) as archive:
             names = archive.namelist()
             part = next((name for name in names if _has_irm_marker(name)), None)
@@ -98,7 +97,7 @@ def _probe_zip_irm(path: Path, details: list[str]) -> IrmInfo | None:
                 details.append(f"Package part suggests IRM: {part.lower()}")
                 return IrmInfo(True, "ooxml_irm", tuple(details))
             part = _custom_xml_rights_part(archive, names)
-    except Exception as exc:
+    except (OSError, ValueError, zipfile.BadZipFile) as exc:
         details.append(f"ZIP IRM probe limited: {exc}")
         return None
     if part is not None:
@@ -120,7 +119,7 @@ def _custom_xml_rights_part(archive, names: list[str]) -> str | None:
             continue
         try:
             data = archive.read(name)[:4000].lower()
-        except Exception:
+        except (KeyError, OSError, ValueError, zipfile.BadZipFile):
             continue
         if b"rightsmanagement" in data or b"msipc" in data:
             return name

@@ -47,7 +47,14 @@ def is_encrypted_office_file(path: Path) -> bool:
     with path.open("rb") as handle:
         try:
             office = msoffcrypto.OfficeFile(handle)
-        except Exception:
+        except (
+            AttributeError,
+            msoffcrypto.exceptions.FileFormatError,
+            msoffcrypto.exceptions.ParseError,
+            OSError,
+            TypeError,
+            ValueError,
+        ):
             return False
         return bool(getattr(office, "is_encrypted", lambda: False)())
 
@@ -58,7 +65,14 @@ def open_office(path: Path):
     handle = path.open("rb")
     try:
         office = msoffcrypto.OfficeFile(handle)
-    except Exception:
+    except (
+        AttributeError,
+        msoffcrypto.exceptions.FileFormatError,
+        msoffcrypto.exceptions.ParseError,
+        OSError,
+        TypeError,
+        ValueError,
+    ):
         handle.close()
         raise
     # Keep handle alive on the office object for subsequent ops.
@@ -202,6 +216,7 @@ def _unknown_encryption_info(otype: object) -> OfficeEncryptionInfo:
 
 def try_password(path: Path, password: str) -> bool:
     """Return True if password verifies (fast path; no full decrypt)."""
+    msoffcrypto = _require_msoffcrypto()
     office = open_office(path)
     try:
         if not office.is_encrypted():
@@ -209,18 +224,17 @@ def try_password(path: Path, password: str) -> bool:
         try:
             _load_office_key(office, password, verify_only=True)
             return True
-        except (ValueError, OSError, RuntimeError):
+        except (OSError, RuntimeError, ValueError):
             return False
-        except Exception as exc:
-            if _is_invalid_key_error(exc):
-                return False
-            raise
+        except msoffcrypto.exceptions.DecryptionError:
+            return False
     finally:
         close_office(office)
 
 
 def decrypt_to(path: Path, password: str, output_path: Path) -> None:
     """Decrypt encrypted Office file to output_path with the given password."""
+    msoffcrypto = _require_msoffcrypto()
     office = open_office(path)
     try:
         if not office.is_encrypted():
@@ -228,11 +242,11 @@ def decrypt_to(path: Path, password: str, output_path: Path) -> None:
             return
         try:
             _load_office_key(office, password, verify_only=False)
-        except Exception as exc:
-            if _is_invalid_key_error(exc):
-                raise EncryptedDocumentError(
-                    "incorrect password for encrypted Office file"
-                ) from exc
+        except msoffcrypto.exceptions.InvalidKeyError as exc:
+            raise EncryptedDocumentError("incorrect password for encrypted Office file") from exc
+        except msoffcrypto.exceptions.DecryptionError as exc:
+            raise EncryptedDocumentError(f"could not load encryption key: {exc}") from exc
+        except (AttributeError, KeyError, OSError, TypeError, ValueError) as exc:
             raise EncryptedDocumentError(f"could not load encryption key: {exc}") from exc
         with output_path.open("wb") as out:
             try:
@@ -251,12 +265,6 @@ def _load_office_key(office, password: str, *, verify_only: bool) -> None:
         office.load_key(password=password)
         if verify_only:
             office.decrypt(io.BytesIO())
-
-
-def _is_invalid_key_error(exc: Exception) -> bool:
-    """Recognize msoffcrypto's version-dependent invalid-password exception names."""
-    name = type(exc).__name__
-    return "Key" in name or "Password" in name or "Invalid" in name
 
 
 def export_hash_line(path: Path, fmt: str = "hashcat") -> str:
