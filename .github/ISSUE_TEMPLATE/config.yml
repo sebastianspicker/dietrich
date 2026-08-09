@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/sebastianspicker/dietrich/security/advisories/new
+    about: Please report security-sensitive issues privately.
+  - name: Contribution guidance
+    url: https://github.com/sebastianspicker/dietrich/blob/main/CONTRIBUTING.md
+    about: Read the document-safety boundaries before opening an issue.
