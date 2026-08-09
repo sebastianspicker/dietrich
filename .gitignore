@@ -72,6 +72,7 @@ docs/screenshots/werkbank-visual-smoke.html
 examples/_work/
 
 # Local tooling and work notes
+/docs/agent/
 /.agent/
 /.agents/
 /.claude/
