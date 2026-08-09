@@ -7,6 +7,7 @@ Flow: classify → IRM gate → open-password hard path → soft OOXML/binary/PD
 from __future__ import annotations
 
 import tempfile
+import zipfile
 from pathlib import Path
 
 from dietrich.crypto.attack import AttackOptions, run_file_attack
@@ -15,10 +16,13 @@ from dietrich.crypto.hash_export import export_hash
 from dietrich.errors import (
     EncryptedDocumentError,
     InvalidDocumentError,
+    MissingDependencyError,
     PasswordNotFoundError,
     UnsupportedFormatError,
 )
 from dietrich.ooxml.package import inspect_ooxml_package, unlock_ooxml_package
+from dietrich.safety.bounded_io import read_file_prefix
+from dietrich.safety.publish import publish_output, temporary_output_path
 from dietrich.types import (
     DocumentFormat,
     DocumentInspection,
@@ -40,8 +44,6 @@ def inspect_document(path: Path) -> DocumentInspection:
 
 def inspect_workbook(path: Path) -> WorkbookInspection:
     """Excel-only inspect: only .xlsx/.xlsm suffixes."""
-    import zipfile
-
     from dietrich.safety.zip_archive import validate_archive_safety
 
     input_path = Path(path)
@@ -145,7 +147,7 @@ def _maybe_resign(result: UnlockResult, options: UnlockOptions) -> UnlockResult:
 
     out = Path(result.output_path)
     # OOXML packages are ZIP (PK); binary Office after decrypt may not be.
-    if not out.is_file() or out.read_bytes()[:2] != b"PK":
+    if not out.is_file() or read_file_prefix(out, 2) != b"PK":
         raise UnsupportedFormatError(
             f"cannot --resign-cert/--resign-key on non-OOXML output {out.name}; "
             "re-sign only applies to ZIP OOXML packages after unlock."
@@ -178,7 +180,7 @@ def _is_msoffcrypto_encrypted(path: Path) -> bool:
         from dietrich.crypto.ooxml_crypto import is_encrypted_office_file
 
         return is_encrypted_office_file(path)
-    except Exception:
+    except (AttributeError, MissingDependencyError, OSError, TypeError, ValueError):
         return False
 
 
@@ -228,7 +230,7 @@ def _unlock_encrypted_office(source: Path, target: Path, options: UnlockOptions)
         removed = None
 
         # Soft-unlock only when decrypt yields OOXML ZIP.
-        if decrypted.read_bytes()[:2] == b"PK":
+        if read_file_prefix(decrypted, 2) == b"PK":
             result = unlock_ooxml_package(decrypted, intermediate, soft_options)
             removed = result.removed
             vba_present = result.vba_project_present
@@ -244,9 +246,11 @@ def _unlock_encrypted_office(source: Path, target: Path, options: UnlockOptions)
 
         if target.exists() and not options.overwrite:
             raise OutputExistsError(f"{target} already exists.")
-        if target.exists():
-            target.unlink()
-        shutil.copy2(intermediate, target)
+
+        with temporary_output_path(target) as published_path:
+            shutil.copy2(intermediate, published_path)
+            _verify_decrypted_output(published_path)
+            publish_output(published_path, target, overwrite=options.overwrite)
 
         return UnlockResult(
             input_path=source,
@@ -257,6 +261,29 @@ def _unlock_encrypted_office(source: Path, target: Path, options: UnlockOptions)
             password_used=password,
             warnings=tuple(warnings),
         )
+
+
+def _verify_decrypted_output(path: Path) -> None:
+    """Validate a decrypted OOXML ZIP or legacy Office compound file before publish."""
+    if zipfile.is_zipfile(path):
+        with zipfile.ZipFile(path) as archive:
+            failed_member = archive.testzip()
+        if failed_member is not None:
+            raise InvalidDocumentError(
+                f"decrypted package failed ZIP verification at {failed_member}"
+            )
+        return
+
+    from dietrich.legacy.cfb_io import CFBF_MAGIC, read_streams
+
+    if read_file_prefix(path, len(CFBF_MAGIC)) != CFBF_MAGIC:
+        raise InvalidDocumentError(
+            "decrypted Office payload is not a valid OOXML ZIP or OLE/CFB file."
+        )
+    try:
+        read_streams(path)
+    except Exception as exc:
+        raise InvalidDocumentError(f"decrypted OLE/CFB payload failed validation: {exc}") from exc
 
 
 def _recover_password_ooxml(source: Path, options: UnlockOptions) -> str:

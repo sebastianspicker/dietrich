@@ -93,3 +93,19 @@ exclude_dirs = ["tests"]
 [tool.pylint.main]
 # Test modules intentionally use local imports, white-box assertions, and focused fixtures.
 ignore-paths = ["(^|.*/)tests/"]
+
+[tool.pylint."messages control"]
+# Optional format libraries are deliberately imported at their use sites so the core CLI
+# remains importable without the matching extra. Capture scripts also add the repository
+# paths before importing their test-backed sample builders.
+disable = ["import-outside-toplevel", "wrong-import-position"]
+
+[tool.pylint.design]
+# These are stable value records and format/crypto helpers, not sprawling public APIs.
+# The limits match the largest intentional signatures and records currently in the tree.
+max-args = 8
+max-positional-arguments = 8
+max-locals = 18
+max-returns = 7
+max-attributes = 22
+min-public-methods = 1

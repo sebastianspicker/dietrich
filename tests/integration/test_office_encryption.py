@@ -77,6 +77,89 @@ def test_wrong_password_fails_without_output(tmp_path: Path) -> None:
     assert not out.exists()
 
 
+def test_nonzip_decrypt_publish_failure_preserves_destination_and_cleans_temp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed binary publication must leave the prior output intact."""
+    from dietrich import dispatch
+    from dietrich.crypto import ooxml_crypto
+    from dietrich.legacy import cfb_io
+
+    source = tmp_path / "encrypted.doc"
+    source.write_bytes(b"encrypted source")
+    target = tmp_path / "unlocked.doc"
+    target.write_bytes(b"prior destination")
+
+    monkeypatch.setattr(dispatch, "_recover_password_ooxml", lambda *_args: "known-password")
+    monkeypatch.setattr(
+        ooxml_crypto,
+        "decrypt_to",
+        lambda _source, _password, destination: destination.write_bytes(
+            cfb_io.CFBF_MAGIC + b"decrypted binary payload"
+        ),
+    )
+    monkeypatch.setattr(cfb_io, "read_streams", lambda _path: {"WordDocument": b""})
+    prefix_limits: list[int] = []
+    real_read_file_prefix = dispatch.read_file_prefix
+
+    def read_prefix(path: Path, limit: int) -> bytes:
+        prefix_limits.append(limit)
+        return real_read_file_prefix(path, limit)
+
+    monkeypatch.setattr(dispatch, "read_file_prefix", read_prefix)
+
+    def fail_publish(temp_path: Path, target_path: Path, *, overwrite: bool) -> None:
+        assert temp_path.parent == target.parent
+        assert temp_path != target_path
+        assert overwrite is True
+        raise OSError("injected publication failure")
+
+    monkeypatch.setattr(dispatch, "publish_output", fail_publish)
+
+    with pytest.raises(OSError, match="injected publication failure"):
+        dispatch._unlock_encrypted_office(source, target, UnlockOptions(overwrite=True))
+
+    assert target.read_bytes() == b"prior destination"
+    assert not list(tmp_path.glob(".unlocked.doc.*.tmp"))
+    assert prefix_limits == [2, len(cfb_io.CFBF_MAGIC)]
+
+
+def test_nonzip_decrypt_publish_race_preserves_competing_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A destination created after the precheck must win a no-overwrite race."""
+    from dietrich import dispatch
+    from dietrich.crypto import ooxml_crypto
+    from dietrich.errors import OutputExistsError
+    from dietrich.legacy import cfb_io
+    from dietrich.safety.publish import publish_output as real_publish_output
+
+    source = tmp_path / "encrypted.doc"
+    source.write_bytes(b"encrypted source")
+    target = tmp_path / "unlocked.doc"
+    monkeypatch.setattr(dispatch, "_recover_password_ooxml", lambda *_args: "known-password")
+    monkeypatch.setattr(
+        ooxml_crypto,
+        "decrypt_to",
+        lambda _source, _password, destination: destination.write_bytes(
+            cfb_io.CFBF_MAGIC + b"decrypted binary payload"
+        ),
+    )
+    monkeypatch.setattr(cfb_io, "read_streams", lambda _path: {"WordDocument": b""})
+
+    def race_publish(temp_path: Path, target_path: Path, *, overwrite: bool) -> None:
+        target_path.write_bytes(b"competing destination")
+        real_publish_output(temp_path, target_path, overwrite=overwrite)
+
+    monkeypatch.setattr(dispatch, "publish_output", race_publish)
+
+    with pytest.raises(OutputExistsError):
+        dispatch._unlock_encrypted_office(source, target, UnlockOptions())
+
+    assert target.read_bytes() == b"competing destination"
+    assert not list(tmp_path.glob(".unlocked.doc.*.tmp"))
+
+
 def test_exhausted_wordlist_fails_without_output(tmp_path: Path) -> None:
     wordlist = tmp_path / "empty_hits.txt"
     wordlist.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
@@ -133,13 +216,29 @@ def test_encrypted_docx_password_unlock(tmp_path: Path) -> None:
 def test_soft_unlock_after_manual_decrypt_with_injected_protection(tmp_path: Path) -> None:
     """Decrypt fixture, inject sheetProtection, then soft-unlock via shipped API."""
     plain = tmp_path / "decrypted.xlsx"
+    _decrypt_fixture(plain)
+
+    protected = tmp_path / "protected.xlsx"
+    _inject_ooxml_protection(plain, protected)
+
+    out = tmp_path / "soft.xlsx"
+    result = unlock_document(protected, out, UnlockOptions())
+    assert result.removed.worksheet_protections >= 1
+    assert result.removed.workbook_protections >= 1
+    _assert_ooxml_protection_removed(out)
+
+
+def _decrypt_fixture(destination: Path) -> None:
+    """Decrypt the shared encrypted fixture into a temporary OOXML package."""
     with ENCRYPTED_XLSX.open("rb") as handle:
         office = msoffcrypto.OfficeFile(handle)
         office.load_key(password=KNOWN_PASSWORD)
-        with plain.open("wb") as out:
+        with destination.open("wb") as out:
             office.decrypt(out)
 
-    protected = tmp_path / "protected.xlsx"
+
+def _inject_ooxml_protection(plain: Path, protected: Path) -> None:
+    """Add worksheet and workbook protection markers to an OOXML package."""
     with zipfile.ZipFile(plain, "r") as src, zipfile.ZipFile(protected, "w") as dst:
         for info in src.infolist():
             data = src.read(info)
@@ -159,12 +258,14 @@ def test_soft_unlock_after_manual_decrypt_with_injected_protection(tmp_path: Pat
                 )
             dst.writestr(info, data)
 
-    out = tmp_path / "soft.xlsx"
-    result = unlock_document(protected, out, UnlockOptions())
-    assert result.removed.worksheet_protections >= 1
-    assert result.removed.workbook_protections >= 1
-    with zipfile.ZipFile(out) as archive:
-        for name in archive.namelist():
-            if name.startswith("xl/worksheets/") and name.endswith(".xml"):
-                assert b"sheetProtection" not in archive.read(name)
+
+def _assert_ooxml_protection_removed(path: Path) -> None:
+    """Assert the soft unlock removed the markers injected for this integration test."""
+    with zipfile.ZipFile(path) as archive:
+        worksheet_names = [
+            name
+            for name in archive.namelist()
+            if name.startswith("xl/worksheets/") and name.endswith(".xml")
+        ]
+        assert all(b"sheetProtection" not in archive.read(name) for name in worksheet_names)
         assert b"workbookProtection" not in archive.read("xl/workbook.xml")

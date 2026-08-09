@@ -151,14 +151,14 @@ def _encrypt_dict_via_pikepdf(path: Path) -> dict[str, str] | None:
 def _pikepdf_encrypt_or_raw(path: Path, pikepdf) -> dict[str, str] | None:
     """Use pikepdf when it can open the file, otherwise retain raw-trailer fallback."""
     try:
-        pdf = pikepdf.open(path, password="")
+        pdf = pikepdf.open(path)
     except pikepdf.PasswordError:
         return _encrypt_from_raw_trailer(path)
-    except Exception:
+    except (OSError, TypeError, ValueError):
         return _encrypt_from_raw_trailer(path)
     try:
         return _opened_pikepdf_encrypt_dict(pdf, pikepdf)
-    except Exception:
+    except (AttributeError, KeyError, OSError, TypeError, ValueError):
         return _encrypt_from_raw_trailer(path)
     finally:
         pdf.close()
@@ -193,10 +193,10 @@ def _pikepdf_item(pikepdf, mapping, key: str):
     """Read a PDF name with pikepdf and string-key compatibility."""
     try:
         return mapping[pikepdf.Name(f"/{key}")]
-    except Exception:
+    except (KeyError, TypeError):
         try:
             return mapping[f"/{key}"]
-        except Exception:
+        except (KeyError, TypeError):
             return None
 
 
@@ -223,7 +223,7 @@ def _pikepdf_binary_fields(pikepdf, encrypt) -> dict[str, str]:
             continue
         try:
             result[key] = "<" + bytes(value).hex() + ">"
-        except Exception:
+        except (TypeError, ValueError):
             continue
     return result
 
@@ -245,7 +245,7 @@ def _add_pikepdf_crypt_filter(pikepdf, encrypt, result: dict[str, str]) -> None:
             length = _pikepdf_item(pikepdf, standard, "Length")
             if length is not None:
                 result["Length"] = str(int(length))
-    except Exception:
+    except (AttributeError, KeyError, TypeError, ValueError):
         return
 
 

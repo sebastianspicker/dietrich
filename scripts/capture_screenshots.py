@@ -55,7 +55,7 @@ def _strip_renderer_comment(path: Path) -> None:
 async def _wait_for_tui(app, pilot) -> None:
     """Wait for the TUI's current background operation to complete."""
     for _ in range(100):
-        if not app._busy:
+        if not app.is_busy:
             await pilot.pause(0.05)
             return
         await pilot.pause(0.05)
@@ -75,6 +75,7 @@ async def _capture_tui_screens(protected: Path) -> list[Path]:
 
         @classmethod
         def now(cls):
+            """Return the fixed capture timestamp."""
             return real_datetime(2026, 7, 22, 9, 42, 18)
 
     original_datetime = tui_app.datetime

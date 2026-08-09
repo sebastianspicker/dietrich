@@ -10,8 +10,10 @@ import pytest
 
 from dietrich import UnlockOptions, export_document_hash, unlock_document
 from dietrich.errors import EncryptedDocumentError, PasswordNotFoundError
+from dietrich.legacy import binary_soft
 from dietrich.legacy.binary_soft import _patch_biff_workbook, unlock_binary_office
 from dietrich.legacy.cfb_io import patch_streams, read_streams
+from dietrich.types import RemovalCounts
 from tests.support.fixtures import FIXTURES
 
 
@@ -51,6 +53,79 @@ def test_injected_biff_protect_clears_exact_record_count(tmp_path: Path) -> None
     out = tmp_path / "out.xls"
     result = unlock_binary_office(mod, out, UnlockOptions())
     assert result.removed.worksheet_protections == 2
+
+
+@pytest.mark.parametrize("has_patches", [False, True])
+def test_binary_publish_failure_preserves_destination_and_cleans_temp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, has_patches: bool
+) -> None:
+    """Both unchanged-copy and patched OLE paths publish only after validation."""
+    source = tmp_path / "source.xls"
+    source.write_bytes(b"legacy source")
+    target = tmp_path / "out.xls"
+    target.write_bytes(b"prior destination")
+
+    monkeypatch.setattr(binary_soft, "read_streams", lambda _path: {"Workbook": b""})
+    monkeypatch.setattr(
+        binary_soft,
+        "_build_patches",
+        lambda _source, _streams: (
+            {"Workbook": b"patched"} if has_patches else {},
+            RemovalCounts(worksheet_protections=int(has_patches)),
+        ),
+    )
+
+    def fake_patch(_source: Path, temp_path: Path, _patches: dict[str, bytes]) -> list[str]:
+        assert temp_path.parent == target.parent
+        assert temp_path != target
+        temp_path.write_bytes(b"patched output")
+        return ["Workbook"]
+
+    monkeypatch.setattr(binary_soft, "patch_streams", fake_patch)
+
+    def fail_publish(temp_path: Path, target_path: Path, *, overwrite: bool) -> None:
+        assert temp_path.parent == target.parent
+        assert temp_path != target_path
+        assert overwrite is True
+        raise OSError("injected publication failure")
+
+    monkeypatch.setattr(binary_soft, "publish_output", fail_publish)
+
+    with pytest.raises(OSError, match="injected publication failure"):
+        unlock_binary_office(source, target, UnlockOptions(overwrite=True))
+
+    assert target.read_bytes() == b"prior destination"
+    assert not list(tmp_path.glob(".out.xls.*.tmp"))
+
+
+def test_binary_publish_race_preserves_competing_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A destination created after the precheck must win a no-overwrite race."""
+    from dietrich.errors import OutputExistsError
+    from dietrich.safety.publish import publish_output as real_publish_output
+
+    source = tmp_path / "source.xls"
+    source.write_bytes(b"legacy source")
+    target = tmp_path / "out.xls"
+    monkeypatch.setattr(binary_soft, "read_streams", lambda _path: {"Workbook": b""})
+    monkeypatch.setattr(
+        binary_soft,
+        "_build_patches",
+        lambda _source, _streams: ({}, RemovalCounts()),
+    )
+
+    def race_publish(temp_path: Path, target_path: Path, *, overwrite: bool) -> None:
+        target_path.write_bytes(b"competing destination")
+        real_publish_output(temp_path, target_path, overwrite=overwrite)
+
+    monkeypatch.setattr(binary_soft, "publish_output", race_publish)
+
+    with pytest.raises(OutputExistsError):
+        unlock_binary_office(source, target, UnlockOptions())
+
+    assert target.read_bytes() == b"competing destination"
+    assert not list(tmp_path.glob(".out.xls.*.tmp"))
 
 
 def test_pdf_aes_hash_uses_128_bits(tmp_path: Path) -> None:

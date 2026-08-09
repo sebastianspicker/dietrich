@@ -6,11 +6,13 @@ Does not open-password decrypt - that is the msoffcrypto hard path.
 
 from __future__ import annotations
 
+import shutil
 import struct
 from pathlib import Path
 
 from dietrich.errors import InvalidDocumentError, OutputExistsError, UnsupportedFormatError
 from dietrich.legacy.cfb_io import patch_streams, read_streams
+from dietrich.safety.publish import publish_output, temporary_output_path
 from dietrich.types import DocumentFormat, RemovalCounts, UnlockOptions, UnlockResult
 
 # BIFF record types related to protection (Excel)
@@ -44,34 +46,33 @@ def unlock_binary_office(
 
     patches, counts = _build_patches(source, streams)
 
-    if not patches:
-        # Still write a copy so output exists; zero removals
-        target.write_bytes(source.read_bytes())
-        return UnlockResult(
-            input_path=source,
-            output_path=target,
-            removed=RemovalCounts(),
-            document_format=DocumentFormat.LEGACY_CFBF,
-            warnings=("No binary protection records found; wrote unchanged copy.",),
-        )
+    with temporary_output_path(target) as temp_path:
+        if not patches:
+            # Still write a copy so output exists; zero removals.
+            shutil.copy2(source, temp_path)
+            warnings = ("No binary protection records found; wrote unchanged copy.",)
+            result_counts = RemovalCounts()
+        else:
+            try:
+                patch_streams(source, temp_path, patches)
+            except Exception as exc:
+                raise InvalidDocumentError(f"failed to write patched OLE: {exc}") from exc
+            warnings = ("Soft-cleared binary Office protection records.",)
+            result_counts = counts
 
-    try:
-        patch_streams(source, target, patches)
-    except Exception as exc:
-        raise InvalidDocumentError(f"failed to write patched OLE: {exc}") from exc
+        try:
+            read_streams(temp_path)
+        except Exception as exc:
+            raise InvalidDocumentError(f"patched OLE failed validation: {exc}") from exc
 
-    # Verify readable
-    try:
-        read_streams(target)
-    except Exception as exc:
-        raise InvalidDocumentError(f"patched OLE failed validation: {exc}") from exc
+        publish_output(temp_path, target, overwrite=options.overwrite)
 
     return UnlockResult(
         input_path=source,
         output_path=target,
-        removed=counts,
+        removed=result_counts,
         document_format=DocumentFormat.LEGACY_CFBF,
-        warnings=("Soft-cleared binary Office protection records.",),
+        warnings=warnings,
     )
 
 

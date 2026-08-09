@@ -5,10 +5,11 @@ from __future__ import annotations
 import base64
 import hashlib
 import zipfile
+from html import escape as escape_html
 from pathlib import Path
-from xml.sax.saxutils import escape
 
-from dietrich.errors import MissingDependencyError, OutputExistsError
+from dietrich.errors import InvalidDocumentError, MissingDependencyError, OutputExistsError
+from dietrich.safety.publish import publish_output, temporary_output_path
 
 
 def resign_ooxml_package(
@@ -35,7 +36,10 @@ def resign_ooxml_package(
     key = serialization.load_pem_private_key(Path(key_pem).read_bytes(), password=None)
     parts = _unsigned_package_parts(package_path)
     _add_signature_parts(parts, certificate, key, hashes, serialization, padding)
-    _write_signed_package(output_path, parts)
+    with temporary_output_path(output_path) as temp_path:
+        _write_signed_package(temp_path, parts)
+        _verify_signed_package(temp_path)
+        publish_output(temp_path, output_path, overwrite=overwrite)
 
     return output_path
 
@@ -104,12 +108,23 @@ def _signature_origin_xml() -> str:
 
 
 def _write_signed_package(output_path: Path, parts: dict[str, bytes]) -> None:
-    """Replace an allowed destination with the fully assembled signed package."""
-    if output_path.exists():
-        output_path.unlink()
+    """Write a fully assembled signed package to a temporary output path."""
     with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, data in parts.items():
             archive.writestr(name, data)
+
+
+def _verify_signed_package(path: Path) -> None:
+    """Check the assembled signed ZIP before atomically publishing it."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            failed_member = archive.testzip()
+    except zipfile.BadZipFile as exc:
+        raise InvalidDocumentError(f"written signed package is not a valid ZIP: {exc}") from exc
+    if failed_member is not None:
+        raise InvalidDocumentError(
+            f"written signed package failed ZIP verification at {failed_member}"
+        )
 
 
 def _build_manifest_xml(references: list[tuple[str, str]]) -> str:
@@ -119,7 +134,7 @@ def _build_manifest_xml(references: list[tuple[str, str]]) -> str:
         # Package-relative URI
         uri = "/" + name.lstrip("/")
         refs.append(
-            f'<Reference URI="{escape(uri)}">'
+            f'<Reference URI="{escape_html(uri, quote=False)}">'
             f"<DigestMethod Algorithm="
             f'"http://www.w3.org/2001/04/xmlenc#sha256"/>'
             f"<DigestValue>{digest}</DigestValue>"

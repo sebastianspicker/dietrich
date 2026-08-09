@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dietrich.safety.bounded_io import read_file_prefix
 from dietrich.types import DocumentFormat, DocumentInspection
 
 
@@ -21,7 +22,7 @@ def inspect_pdf(path: Path) -> DocumentInspection:
     except ImportError:
         notes.append("Install dietrich[pdf] (pikepdf) for full PDF inspect/unlock.")
         # Heuristic: look for /Encrypt in raw bytes
-        blob = input_path.read_bytes()[:200_000]
+        blob = read_file_prefix(input_path, 200_000)
         if b"/Encrypt" in blob:
             encrypted = True
             user_required = True
@@ -50,7 +51,7 @@ def inspect_pdf(path: Path) -> DocumentInspection:
         owner_restrictions = True
         strategies.extend(["crypto:pdf_password", "crypto:wordlist", "crypto:export_hash"])
         notes.append("User password required to open this PDF.")
-    except Exception as exc:
+    except (OSError, pikepdf.PdfError, TypeError, ValueError) as exc:
         notes.append(f"PDF inspect limited: {exc}")
 
     return DocumentInspection(

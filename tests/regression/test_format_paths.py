@@ -241,12 +241,84 @@ def test_resign_with_self_signed_cert(tmp_path: Path) -> None:
         )
         z.writestr("xl/workbook.xml", b"<workbook/>")
 
-    out = tmp_path / "signed.xlsx"
-    resign_ooxml_package(pkg, out, cert_pem=cert_pem, key_pem=key_pem)
-    with zipfile.ZipFile(out) as z:
+    resign_ooxml_package(pkg, pkg, cert_pem=cert_pem, key_pem=key_pem, overwrite=True)
+    with zipfile.ZipFile(pkg) as z:
         names = z.namelist()
         assert any(n.startswith("_xmlsignatures/") for n in names)
         assert b"SignatureValue" in z.read("_xmlsignatures/sig1.xml")
+
+
+def test_resign_publish_failure_preserves_destination_and_cleans_temp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed signed-package publish must not erase the previous destination."""
+    pytest.importorskip("cryptography")
+    from dietrich.signatures import resign
+
+    cert_pem, key_pem = _write_dummy_cert_key(tmp_path)
+    package = tmp_path / "in.xlsx"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("[Content_Types].xml", b"<Types/>")
+        archive.writestr("_rels/.rels", b"<Relationships/>")
+        archive.writestr("xl/workbook.xml", b"<workbook/>")
+    output = tmp_path / "signed.xlsx"
+    output.write_bytes(b"prior destination")
+
+    def fail_publish(temp_path: Path, target_path: Path, *, overwrite: bool) -> None:
+        assert temp_path.parent == output.parent
+        assert temp_path != target_path
+        assert zipfile.is_zipfile(temp_path)
+        assert overwrite is True
+        raise OSError("injected publication failure")
+
+    monkeypatch.setattr(resign, "publish_output", fail_publish)
+
+    with pytest.raises(OSError, match="injected publication failure"):
+        resign.resign_ooxml_package(
+            package,
+            output,
+            cert_pem=cert_pem,
+            key_pem=key_pem,
+            overwrite=True,
+        )
+
+    assert output.read_bytes() == b"prior destination"
+    assert not list(tmp_path.glob(".signed.xlsx.*.tmp"))
+
+
+def test_resign_publish_race_preserves_competing_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A destination created during signing must win a no-overwrite race."""
+    pytest.importorskip("cryptography")
+    from dietrich.errors import OutputExistsError
+    from dietrich.safety.publish import publish_output as real_publish_output
+    from dietrich.signatures import resign
+
+    cert_pem, key_pem = _write_dummy_cert_key(tmp_path)
+    package = tmp_path / "in.xlsx"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("[Content_Types].xml", b"<Types/>")
+        archive.writestr("_rels/.rels", b"<Relationships/>")
+        archive.writestr("xl/workbook.xml", b"<workbook/>")
+    output = tmp_path / "signed.xlsx"
+
+    def race_publish(temp_path: Path, target_path: Path, *, overwrite: bool) -> None:
+        target_path.write_bytes(b"competing destination")
+        real_publish_output(temp_path, target_path, overwrite=overwrite)
+
+    monkeypatch.setattr(resign, "publish_output", race_publish)
+
+    with pytest.raises(OutputExistsError):
+        resign.resign_ooxml_package(
+            package,
+            output,
+            cert_pem=cert_pem,
+            key_pem=key_pem,
+        )
+
+    assert output.read_bytes() == b"competing destination"
+    assert not list(tmp_path.glob(".signed.xlsx.*.tmp"))
 
 
 def test_cli_hashcat_flag_requires_hashcat(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

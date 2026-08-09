@@ -106,7 +106,7 @@ class DietrichApp(App[None]):
 
     def _log(self, message: str) -> None:
         """Append one line to the activity log."""
-        timestamp = datetime.now().strftime("%H:%M:%S")
+        timestamp = datetime.now().time().isoformat(timespec="seconds")
         self.query_one("#log", Log).write_line(f"{timestamp}  {message}")
 
     def _refresh_recent_list(self) -> None:
@@ -147,6 +147,11 @@ class DietrichApp(App[None]):
         self.query_one("#session-state", Static).update("WORKING" if busy else "READY")
         foot = "● working · no network" if busy else "● ready · no network"
         self.query_one("#session-foot", Static).update(foot)
+
+    @property
+    def is_busy(self) -> bool:
+        """Return whether a background document operation is running."""
+        return self._busy
 
     def _input_path(self) -> Path | None:
         """Return a validated existing file path, or log+show an error and return None."""
@@ -286,7 +291,7 @@ class DietrichApp(App[None]):
         except DietrichError as exc:
             self.call_from_thread(self._inspect_failed, str(exc))
             return
-        except Exception as exc:
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
             self.call_from_thread(self._inspect_failed, f"unexpected: {exc}")
             return
         self.call_from_thread(self._inspect_ok, inspection)
@@ -345,7 +350,7 @@ class DietrichApp(App[None]):
         except DietrichError as exc:
             self.call_from_thread(self._unlock_failed, str(exc))
             return
-        except Exception as exc:
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
             self.call_from_thread(self._unlock_failed, f"unexpected: {exc}")
             return
         self.call_from_thread(self._unlock_ok, result)
@@ -384,7 +389,7 @@ class DietrichApp(App[None]):
         except DietrichError as exc:
             self.call_from_thread(self._export_done, f"export-hash error: {exc}")
             return
-        except Exception as exc:
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
             self.call_from_thread(self._export_done, f"export-hash unexpected: {exc}")
             return
         display = line if len(line) <= 160 else line[:140] + "…"

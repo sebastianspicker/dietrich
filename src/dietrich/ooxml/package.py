@@ -7,7 +7,6 @@ publishes the output.
 
 from __future__ import annotations
 
-import tempfile
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -15,7 +14,7 @@ from pathlib import Path
 from dietrich.errors import InvalidDocumentError
 from dietrich.ooxml import excel, powerpoint, props, word
 from dietrich.ooxml.excel import VBA_PROJECT_PATHS
-from dietrich.safety.publish import publish_output
+from dietrich.safety.publish import publish_output, temporary_output_path
 from dietrich.safety.zip_archive import package_is_signed, validate_archive_safety
 from dietrich.signatures.strip import strip_signature_members
 from dietrich.types import (
@@ -131,37 +130,34 @@ def unlock_ooxml_package(
 
     stats = PartStats()
     warnings: list[str] = []
-    temp_path: Path | None = None
     fmt = DocumentFormat.UNKNOWN
     vba_present = False
 
     try:
-        with zipfile.ZipFile(source_path) as source:
-            validate_archive_safety(source, allow_signed=options.strip_signatures)
-            names = source.namelist()
-            fmt = _format_from_names(names)
-            vba_present = any(p in names for p in VBA_PROJECT_PATHS)
-            transformers = _transformers_for(fmt)
+        with temporary_output_path(target_path) as temp_path:
+            with zipfile.ZipFile(source_path) as source:
+                validate_archive_safety(source, allow_signed=options.strip_signatures)
+                names = source.namelist()
+                fmt = _format_from_names(names)
+                vba_present = any(p in names for p in VBA_PROJECT_PATHS)
+                transformers = _transformers_for(fmt)
 
-            skip_names, rewritten_parts = _signature_rewrites(
-                names, source.read, options, stats, warnings
-            )
+                skip_names, rewritten_parts = _signature_rewrites(
+                    names, source.read, options, stats, warnings
+                )
 
-            temp_path = _make_temporary_package_path(target_path)
+                _write_transformed_archive(
+                    source,
+                    temp_path,
+                    transformers,
+                    skip_names,
+                    rewritten_parts,
+                    options,
+                    stats,
+                    warnings,
+                )
 
-            _write_transformed_archive(
-                source,
-                temp_path,
-                transformers,
-                skip_names,
-                rewritten_parts,
-                options,
-                stats,
-                warnings,
-            )
-
-        _verify_and_publish_package(temp_path, target_path, options)
-        temp_path = None
+            _verify_and_publish_package(temp_path, target_path, options)
     except zipfile.BadZipFile as exc:
         raise InvalidDocumentError(
             f"{source_path} is not a valid OOXML ZIP. Corrupt files and "
@@ -169,9 +165,6 @@ def unlock_ooxml_package(
         ) from exc
     except RuntimeError as exc:
         raise InvalidDocumentError(f"{source_path} could not be read: {exc}") from exc
-    finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
 
     return _package_result(source_path, target_path, stats, fmt, vba_present, warnings)
 
@@ -201,17 +194,6 @@ def _package_result(
         vba_project_present=vba_present,
         warnings=tuple(warnings),
     )
-
-
-def _make_temporary_package_path(target_path: Path) -> Path:
-    """Allocate a target-adjacent temporary file for an atomic package rewrite."""
-    with tempfile.NamedTemporaryFile(
-        prefix=f".{target_path.name}.",
-        suffix=".tmp",
-        dir=target_path.parent if target_path.parent.exists() else None,
-        delete=False,
-    ) as temp_file:
-        return Path(temp_file.name)
 
 
 def _verify_and_publish_package(temp_path: Path, target_path: Path, options: UnlockOptions) -> None:
