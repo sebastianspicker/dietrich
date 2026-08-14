@@ -40,7 +40,15 @@ def main() -> int:
     protected_pptx(OUT / "protected.pptx")
     write_signed_xlsx(OUT / "signed.xlsx")
 
-    # PDF demos
+    _write_pdf_demos()
+    _copy_public_fixtures()
+    _write_password_notes()
+    print(f"samples ready under {OUT}")
+    return 0
+
+
+def _write_pdf_demos() -> None:
+    """Generate optional PDF examples when pikepdf is installed."""
     try:
         make_restricted_pdf(OUT / "restricted.pdf")
         make_user_locked_pdf(OUT / "user_locked.pdf", password="demo")
@@ -50,7 +58,9 @@ def main() -> int:
             raise
         print(f"skip PDF demos: {exc}", file=sys.stderr)
 
-    # Link/copy public fixtures for convenience
+
+def _copy_public_fixtures() -> None:
+    """Copy documented public Office fixtures into the demo directory."""
     copies = [
         (ENCRYPTED_XLSX, OUT / "encrypted.xlsx"),
         (ENCRYPTED_DOCX, OUT / "encrypted.docx"),
@@ -65,15 +75,15 @@ def main() -> int:
         else:
             print(f"missing fixture {src}", file=sys.stderr)
 
-    # passwords note
+
+def _write_password_notes() -> None:
+    """Write the public demo credentials next to generated samples."""
     (OUT / "PASSWORDS.txt").write_text(
         "encrypted.xlsx / encrypted.docx: Password1234_\n"
         "user_locked.pdf: demo\n"
         "restricted.pdf: empty user password; owner restrictions only\n",
         encoding="utf-8",
     )
-    print(f"samples ready under {OUT}")
-    return 0
 
 
 if __name__ == "__main__":

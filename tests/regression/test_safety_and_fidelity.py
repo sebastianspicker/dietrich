@@ -10,9 +10,12 @@ import pytest
 
 from dietrich import UnlockOptions, export_document_hash, unlock_document
 from dietrich.errors import EncryptedDocumentError, PasswordNotFoundError
+from dietrich.legacy import binary_soft
 from dietrich.legacy.binary_soft import _patch_biff_workbook, unlock_binary_office
 from dietrich.legacy.cfb_io import patch_streams, read_streams
+from dietrich.types import RemovalCounts
 from tests.support.fixtures import FIXTURES
+from tests.support.ooxml import write_ooxml
 
 
 @pytest.mark.skipif(not (FIXTURES / "plain.xls").is_file(), reason="plain.xls missing")
@@ -51,6 +54,79 @@ def test_injected_biff_protect_clears_exact_record_count(tmp_path: Path) -> None
     out = tmp_path / "out.xls"
     result = unlock_binary_office(mod, out, UnlockOptions())
     assert result.removed.worksheet_protections == 2
+
+
+@pytest.mark.parametrize("has_patches", [False, True])
+def test_binary_publish_failure_preserves_destination_and_cleans_temp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, has_patches: bool
+) -> None:
+    """Both unchanged-copy and patched OLE paths publish only after validation."""
+    source = tmp_path / "source.xls"
+    source.write_bytes(b"legacy source")
+    target = tmp_path / "out.xls"
+    target.write_bytes(b"prior destination")
+
+    monkeypatch.setattr(binary_soft, "read_streams", lambda _path: {"Workbook": b""})
+    monkeypatch.setattr(
+        binary_soft,
+        "_build_patches",
+        lambda _source, _streams: (
+            {"Workbook": b"patched"} if has_patches else {},
+            RemovalCounts(worksheet_protections=int(has_patches)),
+        ),
+    )
+
+    def fake_patch(_source: Path, temp_path: Path, _patches: dict[str, bytes]) -> list[str]:
+        assert temp_path.parent == target.parent
+        assert temp_path != target
+        temp_path.write_bytes(b"patched output")
+        return ["Workbook"]
+
+    monkeypatch.setattr(binary_soft, "patch_streams", fake_patch)
+
+    def fail_publish(temp_path: Path, target_path: Path, *, overwrite: bool) -> None:
+        assert temp_path.parent == target.parent
+        assert temp_path != target_path
+        assert overwrite is True
+        raise OSError("injected publication failure")
+
+    monkeypatch.setattr(binary_soft, "publish_output", fail_publish)
+
+    with pytest.raises(OSError, match="injected publication failure"):
+        unlock_binary_office(source, target, UnlockOptions(overwrite=True))
+
+    assert target.read_bytes() == b"prior destination"
+    assert not list(tmp_path.glob(".out.xls.*.tmp"))
+
+
+def test_binary_publish_race_preserves_competing_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A destination created after the precheck must win a no-overwrite race."""
+    from dietrich.errors import OutputExistsError
+    from dietrich.safety.publish import publish_output as real_publish_output
+
+    source = tmp_path / "source.xls"
+    source.write_bytes(b"legacy source")
+    target = tmp_path / "out.xls"
+    monkeypatch.setattr(binary_soft, "read_streams", lambda _path: {"Workbook": b""})
+    monkeypatch.setattr(
+        binary_soft,
+        "_build_patches",
+        lambda _source, _streams: ({}, RemovalCounts()),
+    )
+
+    def race_publish(temp_path: Path, target_path: Path, *, overwrite: bool) -> None:
+        target_path.write_bytes(b"competing destination")
+        real_publish_output(temp_path, target_path, overwrite=overwrite)
+
+    monkeypatch.setattr(binary_soft, "publish_output", race_publish)
+
+    with pytest.raises(OutputExistsError):
+        unlock_binary_office(source, target, UnlockOptions())
+
+    assert target.read_bytes() == b"competing destination"
+    assert not list(tmp_path.glob(".out.xls.*.tmp"))
 
 
 def test_pdf_aes_hash_uses_128_bits(tmp_path: Path) -> None:
@@ -109,6 +185,7 @@ def test_hashcat_mask_wired_to_attack_mode_3(monkeypatch: pytest.MonkeyPatch) ->
 
     # Call through the real dispatch recovery path
     from dietrich.dispatch import _recover_via_hashcat
+
     enc = FIXTURES / "example_password.xlsx"
     if not enc.is_file():
         pytest.skip("encrypted fixture missing")
@@ -257,13 +334,16 @@ def test_pdf_user_password_e2e(tmp_path: Path) -> None:
 
 def test_vba_warns_when_nothing_cleared(tmp_path: Path) -> None:
     src = tmp_path / "m.xlsm"
-    with zipfile.ZipFile(src, "w") as zf:
-        zf.writestr("[Content_Types].xml", b"<Types/>")
-        zf.writestr("_rels/.rels", b"<Relationships/>")
-        zf.writestr("xl/workbook.xml", b"<workbook/>")
-        zf.writestr("xl/worksheets/s1.xml", b"<worksheet/>")
-        # Binary blob with no CMG/DPB/GC text
-        zf.writestr("xl/vbaProject.bin", b"\x00\x01\x02NO_KEYS_HERE\xff")
+    write_ooxml(
+        src,
+        {
+            "xl/workbook.xml": b"<workbook/>",
+            "xl/worksheets/s1.xml": b"<worksheet/>",
+            # Binary blob with no CMG/DPB/GC text
+            "xl/vbaProject.bin": b"\x00\x01\x02NO_KEYS_HERE\xff",
+        },
+        compression=zipfile.ZIP_STORED,
+    )
     out = tmp_path / "out.xlsm"
     result = unlock_document(src, out, UnlockOptions(unlock_vba=True))
     assert result.removed.vba_unlocked == 0
@@ -303,14 +383,14 @@ def test_missing_wordlist_is_dietrich_error(tmp_path: Path) -> None:
 def test_irm_blocks_unlock_with_actionable_message(tmp_path: Path) -> None:
     """Synthetic IRM package part must not soft-unlock as ordinary OOXML."""
     src = tmp_path / "irm.xlsx"
-    with zipfile.ZipFile(src, "w") as zf:
-        zf.writestr("[Content_Types].xml", b"<Types/>")
-        zf.writestr("_rels/.rels", b"<Relationships/>")
-        zf.writestr("xl/workbook.xml", b"<workbook/>")
-        zf.writestr(
-            "customXml/item1.xml",
-            b"<root>MicrosoftRightsManagement something</root>",
-        )
+    write_ooxml(
+        src,
+        {
+            "xl/workbook.xml": b"<workbook/>",
+            "customXml/item1.xml": b"<root>MicrosoftRightsManagement something</root>",
+        },
+        compression=zipfile.ZIP_STORED,
+    )
     with pytest.raises(EncryptedDocumentError, match="IRM|RMS|Purview|license"):
         unlock_document(src, tmp_path / "out.xlsx", UnlockOptions())
 
@@ -322,12 +402,15 @@ def test_docsecurity_preserves_prefix_shape(tmp_path: Path) -> None:
         b'<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">'
         b"<DocSecurity>8</DocSecurity></Properties>"
     )
-    with zipfile.ZipFile(src, "w") as zf:
-        zf.writestr("[Content_Types].xml", b"<Types/>")
-        zf.writestr("_rels/.rels", b"<Relationships/>")
-        zf.writestr("xl/workbook.xml", b"<workbook/>")
-        zf.writestr("xl/worksheets/s1.xml", b"<worksheet/>")
-        zf.writestr("docProps/app.xml", app)
+    write_ooxml(
+        src,
+        {
+            "xl/workbook.xml": b"<workbook/>",
+            "xl/worksheets/s1.xml": b"<worksheet/>",
+            "docProps/app.xml": app,
+        },
+        compression=zipfile.ZIP_STORED,
+    )
     out = tmp_path / "out.xlsx"
     result = unlock_document(src, out, UnlockOptions())
     assert result.removed.mark_as_final >= 1

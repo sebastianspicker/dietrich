@@ -13,7 +13,9 @@ from dietrich.crypto.irm import detect_irm
 from dietrich.legacy.binary_soft import unlock_binary_office
 from dietrich.legacy.cfb_io import patch_streams, read_streams
 from dietrich.types import DocumentFormat
+from tests.support.cli import make_self_signed_pem
 from tests.support.fixtures import FIXTURES
+from tests.support.ooxml import write_ooxml
 
 
 @pytest.mark.skipif(not (FIXTURES / "plain.xls").is_file(), reason="plain.xls missing")
@@ -85,41 +87,6 @@ def test_hashcat_mode_suggest_office() -> None:
     assert suggest_mode_from_hash("$office$20072012816aabb*cc") == 9400
 
 
-def _write_dummy_cert_key(tmp_path: Path) -> tuple[Path, Path]:
-    pytest.importorskip("cryptography")
-    import datetime
-
-    from cryptography import x509
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from cryptography.x509.oid import NameOID
-
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    now = datetime.datetime.now(datetime.UTC)
-    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Dietrich Test")])
-    cert = (
-        x509.CertificateBuilder()
-        .subject_name(subject)
-        .issuer_name(issuer)
-        .public_key(key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - datetime.timedelta(days=1))
-        .not_valid_after(now + datetime.timedelta(days=1))
-        .sign(key, hashes.SHA256())
-    )
-    cert_pem = tmp_path / "c.pem"
-    key_pem = tmp_path / "k.pem"
-    cert_pem.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
-    key_pem.write_bytes(
-        key.private_bytes(
-            serialization.Encoding.PEM,
-            serialization.PrivateFormat.TraditionalOpenSSL,
-            serialization.NoEncryption(),
-        )
-    )
-    return cert_pem, key_pem
-
-
 def test_resign_on_binary_xls_raises_not_silent_noop(tmp_path: Path) -> None:
     """Resign flags on non-OOXML must error, not succeed quietly."""
     from dietrich.errors import UnsupportedFormatError
@@ -127,7 +94,8 @@ def test_resign_on_binary_xls_raises_not_silent_noop(tmp_path: Path) -> None:
     xls = FIXTURES / "plain.xls"
     if not xls.is_file():
         pytest.skip("plain.xls missing")
-    cert_pem, key_pem = _write_dummy_cert_key(tmp_path)
+    pytest.importorskip("cryptography")
+    cert_pem, key_pem = make_self_signed_pem(tmp_path)
     out = tmp_path / "out.xls"
     with pytest.raises(UnsupportedFormatError, match="cannot --resign"):
         unlock_document(
@@ -146,7 +114,8 @@ def test_resign_on_pdf_raises_not_silent_noop(tmp_path: Path) -> None:
     pdf = pikepdf.new()
     pdf.add_blank_page(page_size=(72, 72))
     pdf.save(pdf_path)
-    cert_pem, key_pem = _write_dummy_cert_key(tmp_path)
+    pytest.importorskip("cryptography")
+    cert_pem, key_pem = make_self_signed_pem(tmp_path)
     out = tmp_path / "out.pdf"
     with pytest.raises(UnsupportedFormatError, match="cannot --resign"):
         unlock_document(
@@ -162,7 +131,8 @@ def test_resign_runs_after_encrypted_ooxml_unlock(tmp_path: Path) -> None:
     enc = FIXTURES / "example_password.xlsx"
     if not enc.is_file():
         pytest.skip("encrypted fixture missing")
-    cert_pem, key_pem = _write_dummy_cert_key(tmp_path)
+    pytest.importorskip("cryptography")
+    cert_pem, key_pem = make_self_signed_pem(tmp_path)
     out = tmp_path / "dec_signed.xlsx"
     result = unlock_document(
         enc,
@@ -197,56 +167,103 @@ def test_suffix_fallback_inspect_note_has_no_legacy_binary_flag() -> None:
 
 def test_resign_with_self_signed_cert(tmp_path: Path) -> None:
     pytest.importorskip("cryptography")
-    import datetime
-
-    from cryptography import x509
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from cryptography.x509.oid import NameOID
-
     from dietrich.signatures.resign import resign_ooxml_package
 
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Dietrich Test")])
-    cert = (
-        x509.CertificateBuilder()
-        .subject_name(subject)
-        .issuer_name(issuer)
-        .public_key(key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1))
-        .not_valid_after(datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=1))
-        .sign(key, hashes.SHA256())
-    )
-    cert_pem = tmp_path / "c.pem"
-    key_pem = tmp_path / "k.pem"
-    cert_pem.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
-    key_pem.write_bytes(
-        key.private_bytes(
-            serialization.Encoding.PEM,
-            serialization.PrivateFormat.TraditionalOpenSSL,
-            serialization.NoEncryption(),
-        )
-    )
+    cert_pem, key_pem = make_self_signed_pem(tmp_path)
 
     pkg = tmp_path / "in.xlsx"
-    with zipfile.ZipFile(pkg, "w") as z:
-        z.writestr(
-            "[Content_Types].xml",
-            b'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
-        )
-        z.writestr(
-            "_rels/.rels",
-            b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>',
-        )
-        z.writestr("xl/workbook.xml", b"<workbook/>")
+    write_ooxml(
+        pkg,
+        {
+            "[Content_Types].xml": (
+                b'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>'
+            ),
+            "_rels/.rels": (
+                b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>'
+            ),
+            "xl/workbook.xml": b"<workbook/>",
+        },
+        compression=zipfile.ZIP_STORED,
+    )
 
-    out = tmp_path / "signed.xlsx"
-    resign_ooxml_package(pkg, out, cert_pem=cert_pem, key_pem=key_pem)
-    with zipfile.ZipFile(out) as z:
+    resign_ooxml_package(pkg, pkg, cert_pem=cert_pem, key_pem=key_pem, overwrite=True)
+    with zipfile.ZipFile(pkg) as z:
         names = z.namelist()
         assert any(n.startswith("_xmlsignatures/") for n in names)
         assert b"SignatureValue" in z.read("_xmlsignatures/sig1.xml")
+
+
+def test_resign_publish_failure_preserves_destination_and_cleans_temp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed signed-package publish must not erase the previous destination."""
+    pytest.importorskip("cryptography")
+    from dietrich.signatures import resign
+
+    cert_pem, key_pem = make_self_signed_pem(tmp_path)
+    package = tmp_path / "in.xlsx"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("[Content_Types].xml", b"<Types/>")
+        archive.writestr("_rels/.rels", b"<Relationships/>")
+        archive.writestr("xl/workbook.xml", b"<workbook/>")
+    output = tmp_path / "signed.xlsx"
+    output.write_bytes(b"prior destination")
+
+    def fail_publish(temp_path: Path, target_path: Path, *, overwrite: bool) -> None:
+        assert temp_path.parent == output.parent
+        assert temp_path != target_path
+        assert zipfile.is_zipfile(temp_path)
+        assert overwrite is True
+        raise OSError("injected publication failure")
+
+    monkeypatch.setattr(resign, "publish_output", fail_publish)
+
+    with pytest.raises(OSError, match="injected publication failure"):
+        resign.resign_ooxml_package(
+            package,
+            output,
+            cert_pem=cert_pem,
+            key_pem=key_pem,
+            overwrite=True,
+        )
+
+    assert output.read_bytes() == b"prior destination"
+    assert not list(tmp_path.glob(".signed.xlsx.*.tmp"))
+
+
+def test_resign_publish_race_preserves_competing_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A destination created during signing must win a no-overwrite race."""
+    pytest.importorskip("cryptography")
+    from dietrich.errors import OutputExistsError
+    from dietrich.safety.publish import publish_output as real_publish_output
+    from dietrich.signatures import resign
+
+    cert_pem, key_pem = make_self_signed_pem(tmp_path)
+    package = tmp_path / "in.xlsx"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("[Content_Types].xml", b"<Types/>")
+        archive.writestr("_rels/.rels", b"<Relationships/>")
+        archive.writestr("xl/workbook.xml", b"<workbook/>")
+    output = tmp_path / "signed.xlsx"
+
+    def race_publish(temp_path: Path, target_path: Path, *, overwrite: bool) -> None:
+        target_path.write_bytes(b"competing destination")
+        real_publish_output(temp_path, target_path, overwrite=overwrite)
+
+    monkeypatch.setattr(resign, "publish_output", race_publish)
+
+    with pytest.raises(OutputExistsError):
+        resign.resign_ooxml_package(
+            package,
+            output,
+            cert_pem=cert_pem,
+            key_pem=key_pem,
+        )
+
+    assert output.read_bytes() == b"competing destination"
+    assert not list(tmp_path.glob(".signed.xlsx.*.tmp"))
 
 
 def test_cli_hashcat_flag_requires_hashcat(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

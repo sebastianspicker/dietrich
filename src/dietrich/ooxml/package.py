@@ -7,15 +7,21 @@ publishes the output.
 
 from __future__ import annotations
 
-import tempfile
 import zipfile
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from dietrich.errors import InvalidDocumentError
-from dietrich.ooxml import excel, powerpoint, props, word
-from dietrich.ooxml.excel import VBA_PROJECT_PATHS
-from dietrich.safety.publish import publish_output
+from dietrich.ooxml.excel import (
+    VBA_PROJECT_PATHS,
+    inspect_excel_parts,
+    transform_excel_part,
+)
+from dietrich.ooxml.powerpoint import inspect_powerpoint_parts, transform_powerpoint_part
+from dietrich.ooxml.props import inspect_props_parts, transform_props_part
+from dietrich.ooxml.word import inspect_word_parts, transform_word_part
+from dietrich.safety.publish import publish_output, temporary_output_path
 from dietrich.safety.zip_archive import package_is_signed, validate_archive_safety
 from dietrich.signatures.strip import strip_signature_members
 from dietrich.types import (
@@ -27,6 +33,19 @@ from dietrich.types import (
 )
 
 Transformer = Callable[[str, bytes, UnlockOptions, PartStats], bytes]
+
+
+@dataclass
+class ArchiveRewriteContext:
+    """Mutable state shared while rewriting one OOXML ZIP archive."""
+
+    source: zipfile.ZipFile
+    transformers: list[Transformer]
+    skip_names: set[str]
+    rewritten_parts: dict[str, bytes]
+    options: UnlockOptions
+    stats: PartStats
+    warnings: list[str]
 
 
 def _format_from_names(names: list[str]) -> DocumentFormat:
@@ -43,13 +62,13 @@ def _format_from_names(names: list[str]) -> DocumentFormat:
 
 def _transformers_for(fmt: DocumentFormat) -> list[Transformer]:
     """Internal helper: _transformers_for."""
-    common: list[Transformer] = [props.transform_props_part]
+    common: list[Transformer] = [transform_props_part]
     if fmt == DocumentFormat.EXCEL_OOXML:
-        return [excel.transform_excel_part, *common]
+        return [transform_excel_part, *common]
     if fmt == DocumentFormat.WORD_OOXML:
-        return [word.transform_word_part, *common]
+        return [transform_word_part, *common]
     if fmt == DocumentFormat.POWERPOINT_OOXML:
-        return [powerpoint.transform_powerpoint_part, *common]
+        return [transform_powerpoint_part, *common]
     return common
 
 
@@ -65,7 +84,7 @@ def inspect_ooxml_package(path: Path, *, allow_signed: bool = False) -> Document
             vba = any(p in names for p in VBA_PROJECT_PATHS)
 
             soft, strategies = _inspect_format_parts(fmt, names, archive.read)
-            soft.extend(props.inspect_props_parts(names, archive.read))
+            soft.extend(inspect_props_parts(names, archive.read))
             if signed:
                 strategies.append("signature:strip")
             if vba:
@@ -102,12 +121,12 @@ def _inspect_format_parts(
     """Inspect format-specific soft protections and advertise their strategies."""
     inspectors = {
         DocumentFormat.EXCEL_OOXML: (
-            excel.inspect_excel_parts,
+            inspect_excel_parts,
             ["soft:sheetProtection", "soft:workbookProtection"],
         ),
-        DocumentFormat.WORD_OOXML: (word.inspect_word_parts, ["soft:documentProtection"]),
+        DocumentFormat.WORD_OOXML: (inspect_word_parts, ["soft:documentProtection"]),
         DocumentFormat.POWERPOINT_OOXML: (
-            powerpoint.inspect_powerpoint_parts,
+            inspect_powerpoint_parts,
             ["soft:modifyVerifier"],
         ),
     }
@@ -131,37 +150,34 @@ def unlock_ooxml_package(
 
     stats = PartStats()
     warnings: list[str] = []
-    temp_path: Path | None = None
     fmt = DocumentFormat.UNKNOWN
     vba_present = False
 
     try:
-        with zipfile.ZipFile(source_path) as source:
-            validate_archive_safety(source, allow_signed=options.strip_signatures)
-            names = source.namelist()
-            fmt = _format_from_names(names)
-            vba_present = any(p in names for p in VBA_PROJECT_PATHS)
-            transformers = _transformers_for(fmt)
+        with temporary_output_path(target_path) as temp_path:
+            with zipfile.ZipFile(source_path) as source:
+                validate_archive_safety(source, allow_signed=options.strip_signatures)
+                names = source.namelist()
+                fmt = _format_from_names(names)
+                vba_present = any(p in names for p in VBA_PROJECT_PATHS)
+                transformers = _transformers_for(fmt)
 
-            skip_names, rewritten_parts = _signature_rewrites(
-                names, source.read, options, stats, warnings
-            )
+                skip_names, rewritten_parts = _signature_rewrites(
+                    names, source.read, options, stats, warnings
+                )
 
-            temp_path = _make_temporary_package_path(target_path)
+                rewrite_context = ArchiveRewriteContext(
+                    source=source,
+                    transformers=transformers,
+                    skip_names=skip_names,
+                    rewritten_parts=rewritten_parts,
+                    options=options,
+                    stats=stats,
+                    warnings=warnings,
+                )
+                _write_transformed_archive(temp_path, rewrite_context)
 
-            _write_transformed_archive(
-                source,
-                temp_path,
-                transformers,
-                skip_names,
-                rewritten_parts,
-                options,
-                stats,
-                warnings,
-            )
-
-        _verify_and_publish_package(temp_path, target_path, options)
-        temp_path = None
+            _verify_and_publish_package(temp_path, target_path, options)
     except zipfile.BadZipFile as exc:
         raise InvalidDocumentError(
             f"{source_path} is not a valid OOXML ZIP. Corrupt files and "
@@ -169,9 +185,6 @@ def unlock_ooxml_package(
         ) from exc
     except RuntimeError as exc:
         raise InvalidDocumentError(f"{source_path} could not be read: {exc}") from exc
-    finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
 
     return _package_result(source_path, target_path, stats, fmt, vba_present, warnings)
 
@@ -203,17 +216,6 @@ def _package_result(
     )
 
 
-def _make_temporary_package_path(target_path: Path) -> Path:
-    """Allocate a target-adjacent temporary file for an atomic package rewrite."""
-    with tempfile.NamedTemporaryFile(
-        prefix=f".{target_path.name}.",
-        suffix=".tmp",
-        dir=target_path.parent if target_path.parent.exists() else None,
-        delete=False,
-    ) as temp_file:
-        return Path(temp_file.name)
-
-
 def _verify_and_publish_package(temp_path: Path, target_path: Path, options: UnlockOptions) -> None:
     """Check the written ZIP before atomically publishing it to the target path."""
     with zipfile.ZipFile(temp_path) as output_archive:
@@ -243,51 +245,38 @@ def _signature_rewrites(
 
 
 def _write_transformed_archive(
-    source: zipfile.ZipFile,
     temp_path: Path,
-    transformers: list[Transformer],
-    skip_names: set[str],
-    rewritten_parts: dict[str, bytes],
-    options: UnlockOptions,
-    stats: PartStats,
-    warnings: list[str],
+    context: ArchiveRewriteContext,
 ) -> None:
     """Rewrite each retained ZIP member while preserving member metadata."""
     with zipfile.ZipFile(temp_path, "w") as target:
-        for info in source.infolist():
+        for info in context.source.infolist():
             name = info.filename.replace("\\", "/")
-            if name not in skip_names:
+            if name not in context.skip_names:
                 target.writestr(
                     _copy_zip_info(info),
-                    _rewrite_member(
-                        source, info, name, transformers, rewritten_parts, options, stats, warnings
-                    ),
+                    _rewrite_member(context, info),
                 )
 
 
 def _rewrite_member(
-    source: zipfile.ZipFile,
+    context: ArchiveRewriteContext,
     info: zipfile.ZipInfo,
-    name: str,
-    transformers: list[Transformer],
-    rewritten_parts: dict[str, bytes],
-    options: UnlockOptions,
-    stats: PartStats,
-    warnings: list[str],
 ) -> bytes:
     """Apply XML and optional VBA transforms to one source member."""
-    data = rewritten_parts.get(name, source.read(info))
-    for transformer in transformers:
-        data = transformer(name, data, options, stats)
-    if options.unlock_vba and name in VBA_PROJECT_PATHS:
+    name = info.filename.replace("\\", "/")
+    data = context.rewritten_parts.get(name, context.source.read(info))
+    for transformer in context.transformers:
+        data = transformer(name, data, context.options, context.stats)
+    if context.options.unlock_vba and name in VBA_PROJECT_PATHS:
         from dietrich.ooxml.vba import unlock_vba_project
 
         data, touched = unlock_vba_project(data)
-        stats.add("vba", touched)
+        context.stats.add("vba", touched)
         if touched == 0:
             warning = f"{name}: --vba found no CMG/DPB/GC text (project stream may be compressed)."
-            if warning not in warnings:
-                warnings.append(warning)
+            if warning not in context.warnings:
+                context.warnings.append(warning)
     return data
 
 

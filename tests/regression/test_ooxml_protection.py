@@ -10,24 +10,17 @@ import pytest
 from dietrich import UnlockOptions, unlock_document
 from dietrich.errors import InvalidDocumentError
 from dietrich.ooxml.xml_strip import count_elements
-
-
-def _pack(path: Path, parts: dict[str, bytes]) -> Path:
-    with zipfile.ZipFile(path, "w") as z:
-        z.writestr("[Content_Types].xml", b"<Types/>")
-        z.writestr("_rels/.rels", b"<Relationships/>")
-        for n, d in parts.items():
-            z.writestr(n, d)
-    return path
+from tests.support.ooxml import write_ooxml
 
 
 def test_chartsheet_protection_removed(tmp_path: Path) -> None:
-    src = _pack(
+    src = write_ooxml(
         tmp_path / "c.xlsx",
         {
             "xl/workbook.xml": b"<workbook/>",
             "xl/chartsheets/sheet1.xml": (b"<chartsheet><sheetProtection/><sheetPr/></chartsheet>"),
         },
+        compression=zipfile.ZIP_STORED,
     )
     out = tmp_path / "out.xlsx"
     result = unlock_document(src, out, UnlockOptions())
@@ -37,7 +30,7 @@ def test_chartsheet_protection_removed(tmp_path: Path) -> None:
 
 
 def test_word_write_protection_removed(tmp_path: Path) -> None:
-    src = _pack(
+    src = write_ooxml(
         tmp_path / "w.docx",
         {
             "word/document.xml": b"<w:document/>",
@@ -48,6 +41,7 @@ def test_word_write_protection_removed(tmp_path: Path) -> None:
                 b"</w:settings>"
             ),
         },
+        compression=zipfile.ZIP_STORED,
     )
     out = tmp_path / "out.docx"
     result = unlock_document(src, out, UnlockOptions())
@@ -59,7 +53,7 @@ def test_word_write_protection_removed(tmp_path: Path) -> None:
 
 
 def test_docsecurity_cleared(tmp_path: Path) -> None:
-    src = _pack(
+    src = write_ooxml(
         tmp_path / "a.xlsx",
         {
             "xl/workbook.xml": b"<workbook/>",
@@ -71,6 +65,7 @@ def test_docsecurity_cleared(tmp_path: Path) -> None:
                 b"</Properties>"
             ),
         },
+        compression=zipfile.ZIP_STORED,
     )
     out = tmp_path / "out.xlsx"
     result = unlock_document(src, out, UnlockOptions())

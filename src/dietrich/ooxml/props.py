@@ -7,7 +7,7 @@ import re
 from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
 
-from dietrich.ooxml.xml_strip import count_elements, local_name
+from dietrich.ooxml.xml_strip import ElementLike, count_elements, local_name
 from dietrich.types import PartStats, ProtectedPart, UnlockOptions
 
 APP_PROPS = "docProps/app.xml"
@@ -36,10 +36,10 @@ def _inspect_doc_security(data: bytes) -> ProtectedPart | None:
     try:
         root = ElementTree.fromstring(data)
         for element in root.iter():
-            if (
-                local_name(element.tag) == "DocSecurity"
-                and (element.text or "").strip() not in {"", "0"}
-            ):
+            if local_name(element.tag) == "DocSecurity" and (element.text or "").strip() not in {
+                "",
+                "0",
+            }:
                 return ProtectedPart(path=APP_PROPS, kind="DocSecurity", count=1)
     except (DefusedXmlException, ElementTree.ParseError):
         return ProtectedPart(path=APP_PROPS, kind="DocSecurity", count=count)
@@ -100,13 +100,16 @@ def _remove_custom_properties(data: bytes, stats: PartStats) -> bytes:
     return data[: declaration_end + 2] + b"\n" + body if declaration_end != -1 else body
 
 
-def _remove_mark_as_final_elements(root: ElementTree.Element, parent_map: dict) -> int:
+def _remove_mark_as_final_elements(
+    root: ElementLike,
+    parent_map: dict[ElementLike, ElementLike],
+) -> int:
     """Remove marked property elements and return the number actually detached."""
     removable = (element for element in root.iter() if _is_mark_as_final_property(element))
     return sum(_remove_element(parent_map.get(element), element) for element in removable)
 
 
-def _remove_element(parent: ElementTree.Element | None, element: ElementTree.Element) -> int:
+def _remove_element(parent: ElementLike | None, element: ElementLike) -> int:
     """Detach an element when it has a parent in the parsed XML tree."""
     if parent is None:
         return 0
@@ -114,7 +117,7 @@ def _remove_element(parent: ElementTree.Element | None, element: ElementTree.Ele
     return 1
 
 
-def _is_mark_as_final_property(element: ElementTree.Element) -> bool:
+def _is_mark_as_final_property(element: ElementLike) -> bool:
     """Return whether one custom-property element carries the MarkAsFinal flag."""
     if local_name(element.tag) != "property":
         return False

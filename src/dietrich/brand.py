@@ -6,6 +6,8 @@ TUI theming builds on these constants in :mod:`dietrich.tui.theme`.
 
 from __future__ import annotations
 
+from typing import TypedDict
+
 # --- Product identity -------------------------------------------------------
 
 PRODUCT_NAME = "Dietrich"
@@ -44,10 +46,28 @@ CARBON = "#1A1F27"  # light ink (docs optional)
 # Theme name registered with Textual App.
 THEME_NAME = "dietrich"
 
+
 # Kwargs for textual.theme.Theme - brand.py stays free of Textual imports.
 # Palette role Action (brass) → primary; Signal (stamp blue) → secondary+accent.
 # Never map Textual accent to brass.
-WERKBANK_THEME_KWARGS: dict[str, str | bool] = {
+class WerkbankThemeKwargs(TypedDict):
+    """Precisely typed arguments shared with Textual's Theme constructor."""
+
+    name: str
+    primary: str
+    secondary: str
+    accent: str
+    foreground: str
+    background: str
+    surface: str
+    panel: str
+    error: str
+    warning: str
+    success: str
+    dark: bool
+
+
+WERKBANK_THEME_KWARGS: WerkbankThemeKwargs = {
     "name": THEME_NAME,
     "primary": OXIDIZED_BRASS,
     "secondary": STAMP_BLUE,

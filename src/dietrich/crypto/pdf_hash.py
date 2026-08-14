@@ -6,9 +6,25 @@ Parses Standard security handler fields and derives key bits from Length/CFM.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from dietrich.errors import EncryptedDocumentError, InvalidDocumentError
+from dietrich.safety.bounded_io import read_file_limited
+
+MAX_NATIVE_PDF_HASH_BYTES = 128 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class _PdfHashFields:
+    """Normalized Standard-handler fields shared by PDF hash variants."""
+
+    version: int | None
+    permissions: int | None
+    key_bits: int
+    owner_hex: str
+    user_hex: str
+    file_id_hex: str
 
 
 def export_pdf_hash(path: Path, fmt: str = "hashcat") -> str:
@@ -18,7 +34,13 @@ def export_pdf_hash(path: Path, fmt: str = "hashcat") -> str:
     the on-disk /O /U /OE /UE /Perms fields are present.
     """
     path = Path(path)
-    raw = path.read_bytes()
+    try:
+        raw = read_file_limited(path, MAX_NATIVE_PDF_HASH_BYTES)
+    except ValueError as exc:
+        raise InvalidDocumentError(
+            f"{path.name} exceeds the native PDF hash parser limit of "
+            f"{MAX_NATIVE_PDF_HASH_BYTES} bytes"
+        ) from exc
     if not raw.startswith(b"%PDF"):
         raise InvalidDocumentError(f"{path.name} is not a PDF")
 
@@ -27,15 +49,15 @@ def export_pdf_hash(path: Path, fmt: str = "hashcat") -> str:
     if encrypt is None:
         raise EncryptedDocumentError(f"{path.name} has no /Encrypt dictionary")
 
-    r, v, p, bits, o_hex, u_hex, id_hex = _pdf_hash_fields(path, raw, encrypt)
+    revision, fields = _pdf_hash_fields(path, raw, encrypt)
 
-    if r in {2, 3, 4}:
-        hash_body = _legacy_pdf_hash(r, v, p, bits, o_hex, u_hex, id_hex)
-    elif r in {5, 6}:
-        hash_body = _aes256_pdf_hash(path, encrypt, r, v, p, o_hex, u_hex, id_hex)
+    if revision in {2, 3, 4}:
+        hash_body = _legacy_pdf_hash(revision, fields)
+    elif revision in {5, 6}:
+        hash_body = _aes256_pdf_hash(path, encrypt, revision, fields)
     else:
         raise EncryptedDocumentError(
-            f"{path.name}: unsupported PDF revision R={r} for native hash export"
+            f"{path.name}: unsupported PDF revision R={revision} for native hash export"
         )
 
     if fmt == "john":
@@ -45,7 +67,7 @@ def export_pdf_hash(path: Path, fmt: str = "hashcat") -> str:
 
 def _pdf_hash_fields(
     path: Path, raw: bytes, encrypt: dict[str, str]
-) -> tuple[int | None, int | None, int | None, int, str, str, str]:
+) -> tuple[int | None, _PdfHashFields]:
     """Validate shared Standard-handler fields used by every hash revision."""
     r = _int_field(encrypt, "R")
     v = _int_field(encrypt, "V")
@@ -62,26 +84,26 @@ def _pdf_hash_fields(
         raise EncryptedDocumentError(f"{path.name}: missing /O or /U in Encrypt dict")
     cfm = _name_field(encrypt, "CFM") or encrypt.get("CFM", "")
     bits = _pdf_key_bits(length=length, r=r, cfm=str(cfm))
-    return r, v, p, bits, o_hex, u_hex, _file_id_hex(raw) or ("00" * 16)
+    return r, _PdfHashFields(
+        version=v,
+        permissions=p,
+        key_bits=bits,
+        owner_hex=o_hex,
+        user_hex=u_hex,
+        file_id_hex=_file_id_hex(raw) or ("00" * 16),
+    )
 
 
-def _legacy_pdf_hash(
-    r: int,
-    v: int | None,
-    p: int | None,
-    bits: int,
-    o_hex: str,
-    u_hex: str,
-    id_hex: str,
-) -> str:
+def _legacy_pdf_hash(revision: int, fields: _PdfHashFields) -> str:
     """Build the R2-R4 hashcat/john field sequence."""
-    u_raw = bytes.fromhex(u_hex)
-    o_raw = bytes.fromhex(o_hex)
-    id_raw = bytes.fromhex(id_hex)
+    u_raw = bytes.fromhex(fields.user_hex)
+    o_raw = bytes.fromhex(fields.owner_hex)
+    id_raw = bytes.fromhex(fields.file_id_hex)
     u_use = u_raw[:32]
     o_use = o_raw[:32]
     return (
-        f"$pdf${v or 2}*{r}*{bits}*{p if p is not None else 0}*0*"
+        f"$pdf${fields.version or 2}*{revision}*{fields.key_bits}*"
+        f"{fields.permissions if fields.permissions is not None else 0}*0*"
         f"{len(id_raw)}*{id_raw.hex()}*{len(u_use)}*{u_use.hex()}*{len(o_use)}*{o_use.hex()}"
     )
 
@@ -89,22 +111,22 @@ def _legacy_pdf_hash(
 def _aes256_pdf_hash(
     path: Path,
     encrypt: dict[str, str],
-    r: int,
-    v: int | None,
-    p: int | None,
-    o_hex: str,
-    u_hex: str,
-    id_hex: str,
+    revision: int,
+    fields: _PdfHashFields,
 ) -> str:
     """Build the R5-R6 AES-256 hashcat/john field sequence."""
     oe = _string_field_hex(encrypt, "OE")
     ue = _string_field_hex(encrypt, "UE")
     perms = _string_field_hex(encrypt, "Perms")
     if not (oe and ue and perms):
-        raise EncryptedDocumentError(f"{path.name}: R={r} requires /OE /UE /Perms for hash export")
+        raise EncryptedDocumentError(
+            f"{path.name}: R={revision} requires /OE /UE /Perms for hash export"
+        )
     return (
-        f"$pdf${v or 5}*{r}*256*{p if p is not None else 0}*1*"
-        f"16*{id_hex[:32]}*127*{u_hex[:254]}*127*{o_hex[:254]}*"
+        f"$pdf${fields.version or 5}*{revision}*256*"
+        f"{fields.permissions if fields.permissions is not None else 0}*1*"
+        f"16*{fields.file_id_hex[:32]}*127*{fields.user_hex[:254]}*"
+        f"127*{fields.owner_hex[:254]}*"
         f"32*{ue[:64]}*32*{oe[:64]}*16*{perms[:32]}"
     )
 
@@ -151,14 +173,12 @@ def _encrypt_dict_via_pikepdf(path: Path) -> dict[str, str] | None:
 def _pikepdf_encrypt_or_raw(path: Path, pikepdf) -> dict[str, str] | None:
     """Use pikepdf when it can open the file, otherwise retain raw-trailer fallback."""
     try:
-        pdf = pikepdf.open(path, password="")
-    except pikepdf.PasswordError:
-        return _encrypt_from_raw_trailer(path)
-    except Exception:
+        pdf = pikepdf.open(path)
+    except (pikepdf.PasswordError, pikepdf.PdfError, OSError, TypeError, ValueError):
         return _encrypt_from_raw_trailer(path)
     try:
         return _opened_pikepdf_encrypt_dict(pdf, pikepdf)
-    except Exception:
+    except (AttributeError, KeyError, OSError, TypeError, ValueError):
         return _encrypt_from_raw_trailer(path)
     finally:
         pdf.close()
@@ -191,13 +211,12 @@ def _pikepdf_object(value):
 
 def _pikepdf_item(pikepdf, mapping, key: str):
     """Read a PDF name with pikepdf and string-key compatibility."""
-    try:
-        return mapping[pikepdf.Name(f"/{key}")]
-    except Exception:
+    for candidate in (pikepdf.Name(f"/{key}"), f"/{key}"):
         try:
-            return mapping[f"/{key}"]
-        except Exception:
-            return None
+            return mapping[candidate]
+        except (KeyError, TypeError):
+            continue
+    return None
 
 
 def _pikepdf_scalar_fields(pikepdf, encrypt) -> dict[str, str]:
@@ -223,7 +242,7 @@ def _pikepdf_binary_fields(pikepdf, encrypt) -> dict[str, str]:
             continue
         try:
             result[key] = "<" + bytes(value).hex() + ">"
-        except Exception:
+        except (TypeError, ValueError):
             continue
     return result
 
@@ -245,7 +264,7 @@ def _add_pikepdf_crypt_filter(pikepdf, encrypt, result: dict[str, str]) -> None:
             length = _pikepdf_item(pikepdf, standard, "Length")
             if length is not None:
                 result["Length"] = str(int(length))
-    except Exception:
+    except (AttributeError, KeyError, TypeError, ValueError):
         return
 
 
@@ -264,16 +283,37 @@ def _find_encrypt_dict(raw: bytes) -> dict[str, str] | None:
 
 def _trailer_encrypt_dict(raw: bytes) -> dict[str, str] | None:
     """Resolve an inline or indirect Encrypt dictionary referenced by the trailer."""
-    trailer = re.search(rb"trailer\s<<(.?)>>", raw, re.S | re.I)
-    if trailer is None:
-        return None
-    body = trailer.group(1)
-    reference = re.search(rb"/Encrypt\s+(\d+)\s+(\d+)\s+R", body)
-    if reference is not None:
-        return _referenced_encrypt_dict(raw, int(reference.group(1)), int(reference.group(2)))
-    if re.search(rb"/Encrypt\s*<<", body):
-        return _parse_dict_body(_extract_inline_dict(body, b"/Encrypt"))
+    search_end = len(raw)
+    while (marker_start := raw.rfind(b"trailer", 0, search_end)) >= 0:
+        search_end = marker_start
+        marker_end = marker_start + len(b"trailer")
+        if not _has_keyword_boundaries(raw, marker_start, marker_end):
+            continue
+        body = _extract_balanced_dict(raw, marker_end)
+        if body is None:
+            continue
+        reference = re.search(rb"/Encrypt\s+(\d+)\s+(\d+)\s+R", body)
+        if reference is not None:
+            parsed = _referenced_encrypt_dict(
+                raw,
+                int(reference.group(1)),
+                int(reference.group(2)),
+            )
+            if parsed is not None:
+                return parsed
+        if re.search(rb"/Encrypt\s*<<", body):
+            parsed = _parse_dict_body(_extract_inline_dict(body, b"/Encrypt"))
+            if parsed:
+                return parsed
     return None
+
+
+def _has_keyword_boundaries(raw: bytes, start: int, end: int) -> bool:
+    """Return whether a matched PDF keyword is not embedded in another token."""
+    word_bytes = b"_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    return (start == 0 or raw[start - 1] not in word_bytes) and (
+        end == len(raw) or raw[end] not in word_bytes
+    )
 
 
 def _referenced_encrypt_dict(
@@ -414,11 +454,12 @@ def _decode_pdf_literal(payload: bytes) -> bytes:
     index = 0
     while index < len(payload):
         byte, index = _decode_pdf_literal_byte(payload, index)
-        output.append(byte)
+        if byte is not None:
+            output.append(byte)
     return bytes(output)
 
 
-def _decode_pdf_literal_byte(payload: bytes, index: int) -> tuple[int, int]:
+def _decode_pdf_literal_byte(payload: bytes, index: int) -> tuple[int | None, int]:
     """Decode one plain or backslash-escaped literal byte."""
     if payload[index] != 0x5C or index + 1 >= len(payload):
         return payload[index], index + 1
@@ -426,6 +467,13 @@ def _decode_pdf_literal_byte(payload: bytes, index: int) -> tuple[int, int]:
     named = {ord("n"): 10, ord("r"): 13, ord("t"): 9, ord("b"): 8, ord("f"): 12}
     if escaped in named:
         return named[escaped], index + 2
+    if escaped == 0x0A:
+        return None, index + 2
+    if escaped == 0x0D:
+        next_index = (
+            index + 3 if index + 2 < len(payload) and payload[index + 2] == 0x0A else index + 2
+        )
+        return None, next_index
     if 0x30 <= escaped <= 0x37:
         return _decode_octal_escape(payload, index + 1)
     return escaped, index + 2
@@ -440,21 +488,42 @@ def _decode_octal_escape(payload: bytes, start: int) -> tuple[int, int]:
 
 
 def _file_id_hex(raw: bytes) -> str | None:
-    # /ID [<hex> <hex>]
-    """Return PDF /ID hex pair for hashcat line construction."""
-    m = re.search(rb"/ID\s\[\s<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>", raw)
-    if m:
-        return m.group(1).decode("ascii").lower()
-    m = re.search(rb"/ID\s\[\s\((.?)\)\s\((.*?)\)", raw, re.S)
-    if m:
-        g1 = m.group(1)
-        return g1.hex() if isinstance(g1, bytes) else None
-    # binary id strings
-    m = re.search(rb"/ID\s\[(.?)\]", raw, re.S)
-    if not m:
+    """Return the first PDF /ID string as normalized hexadecimal bytes."""
+    match = re.search(rb"/ID\s*\[\s*", raw)
+    if match is None or match.end() >= len(raw):
         return None
-    body = m.group(1)
-    hm = re.search(rb"<([0-9A-Fa-f]+)>", body)
-    if hm:
-        return hm.group(1).decode("ascii").lower()
+    start = match.end()
+    if raw[start] == ord("<"):
+        end = raw.find(b">", start + 1)
+        if end < 0:
+            return None
+        payload = raw[start + 1 : end]
+        compact = payload.translate(None, b"\x00\t\n\x0c\r ")
+        if not compact or re.fullmatch(rb"[0-9A-Fa-f]+", compact) is None:
+            return None
+        if len(compact) % 2:
+            compact += b"0"
+        return compact.decode("ascii").lower()
+    if raw[start] == ord("("):
+        payload = _literal_payload(raw, start)
+        return _decode_pdf_literal(payload).hex() if payload is not None else None
+    return None
+
+
+def _literal_payload(raw: bytes, start: int) -> bytes | None:
+    """Extract one balanced PDF literal string while retaining escape bytes."""
+    depth = 1
+    index = start + 1
+    while index < len(raw):
+        byte = raw[index]
+        if byte == 0x5C:
+            index += 2
+            continue
+        if byte == ord("("):
+            depth += 1
+        elif byte == ord(")"):
+            depth -= 1
+            if depth == 0:
+                return raw[start + 1 : index]
+        index += 1
     return None

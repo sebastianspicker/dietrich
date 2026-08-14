@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import binascii
 import io
+import struct
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, BinaryIO
 
 from dietrich.errors import EncryptedDocumentError, MissingDependencyError
 
@@ -27,6 +29,22 @@ class OfficeEncryptionInfo:
     cost_class: str  # trivial | moderate | expensive
     hashcat_mode: int | None
     notes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _OfficeSession:
+    """Keep msoffcrypto's document object and its source stream alive together."""
+
+    office: Any
+    handle: BinaryIO
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate the msoffcrypto API to the wrapped document object."""
+        return getattr(self.office, name)
+
+    def close(self) -> None:
+        """Close the source stream retained for lazy msoffcrypto reads."""
+        self.handle.close()
 
 
 def _require_msoffcrypto():
@@ -47,30 +65,40 @@ def is_encrypted_office_file(path: Path) -> bool:
     with path.open("rb") as handle:
         try:
             office = msoffcrypto.OfficeFile(handle)
-        except Exception:
+        except (
+            AttributeError,
+            msoffcrypto.exceptions.FileFormatError,
+            msoffcrypto.exceptions.ParseError,
+            OSError,
+            TypeError,
+            ValueError,
+        ):
             return False
         return bool(getattr(office, "is_encrypted", lambda: False)())
 
 
-def open_office(path: Path):
+def open_office(path: Path) -> _OfficeSession:
     """Open an OfficeFile handle (caller must close_office)."""
     msoffcrypto = _require_msoffcrypto()
     handle = path.open("rb")
     try:
         office = msoffcrypto.OfficeFile(handle)
-    except Exception:
+    except (
+        AttributeError,
+        msoffcrypto.exceptions.FileFormatError,
+        msoffcrypto.exceptions.ParseError,
+        OSError,
+        TypeError,
+        ValueError,
+    ):
         handle.close()
         raise
-    # Keep handle alive on the office object for subsequent ops.
-    office._dietrich_handle = handle
-    return office
+    return _OfficeSession(office=office, handle=handle)
 
 
-def close_office(office) -> None:
+def close_office(office: _OfficeSession) -> None:
     """Close the file handle attached by open_office."""
-    handle = getattr(office, "_dietrich_handle", None)
-    if handle is not None:
-        handle.close()
+    office.close()
 
 
 def describe_encryption(path: Path) -> OfficeEncryptionInfo:
@@ -202,6 +230,7 @@ def _unknown_encryption_info(otype: object) -> OfficeEncryptionInfo:
 
 def try_password(path: Path, password: str) -> bool:
     """Return True if password verifies (fast path; no full decrypt)."""
+    msoffcrypto = _require_msoffcrypto()
     office = open_office(path)
     try:
         if not office.is_encrypted():
@@ -209,18 +238,17 @@ def try_password(path: Path, password: str) -> bool:
         try:
             _load_office_key(office, password, verify_only=True)
             return True
-        except (ValueError, OSError, RuntimeError):
+        except (OSError, RuntimeError, ValueError):
             return False
-        except Exception as exc:
-            if _is_invalid_key_error(exc):
-                return False
-            raise
+        except msoffcrypto.exceptions.DecryptionError:
+            return False
     finally:
         close_office(office)
 
 
 def decrypt_to(path: Path, password: str, output_path: Path) -> None:
     """Decrypt encrypted Office file to output_path with the given password."""
+    msoffcrypto = _require_msoffcrypto()
     office = open_office(path)
     try:
         if not office.is_encrypted():
@@ -228,15 +256,17 @@ def decrypt_to(path: Path, password: str, output_path: Path) -> None:
             return
         try:
             _load_office_key(office, password, verify_only=False)
-        except Exception as exc:
-            if _is_invalid_key_error(exc):
-                raise EncryptedDocumentError(
-                    "incorrect password for encrypted Office file"
-                ) from exc
+        except msoffcrypto.exceptions.InvalidKeyError as exc:
+            raise EncryptedDocumentError("incorrect password for encrypted Office file") from exc
+        except msoffcrypto.exceptions.DecryptionError as exc:
+            raise EncryptedDocumentError(f"could not load encryption key: {exc}") from exc
+        except (AttributeError, KeyError, OSError, TypeError, ValueError) as exc:
             raise EncryptedDocumentError(f"could not load encryption key: {exc}") from exc
         with output_path.open("wb") as out:
             try:
                 office.decrypt(out)
+            except msoffcrypto.exceptions.DecryptionError as exc:
+                raise EncryptedDocumentError(f"decrypt failed: {exc}") from exc
             except (ValueError, OSError, RuntimeError) as exc:
                 raise EncryptedDocumentError(f"decrypt failed: {exc}") from exc
     finally:
@@ -253,12 +283,6 @@ def _load_office_key(office, password: str, *, verify_only: bool) -> None:
             office.decrypt(io.BytesIO())
 
 
-def _is_invalid_key_error(exc: Exception) -> bool:
-    """Recognize msoffcrypto's version-dependent invalid-password exception names."""
-    name = type(exc).__name__
-    return "Key" in name or "Password" in name or "Invalid" in name
-
-
 def export_hash_line(path: Path, fmt: str = "hashcat") -> str:
     """Export a real office2john / hashcat-compatible Office hash line.
 
@@ -268,15 +292,35 @@ def export_hash_line(path: Path, fmt: str = "hashcat") -> str:
     hashcat modes: 9600 (2013/SHA512), 9500 (2010/SHA1), 9400 (2007).
     """
     path = Path(path)
-    office = open_office(path)
+    msoffcrypto = _require_msoffcrypto()
     try:
-        if not office.is_encrypted():
-            raise EncryptedDocumentError(f"{path.name} is not open-password encrypted")
+        office = open_office(path)
+        try:
+            if not office.is_encrypted():
+                raise EncryptedDocumentError(f"{path.name} is not open-password encrypted")
 
-        hash_body = _office_hash_body(office, path)
-        return f"{path.name}:{hash_body}" if fmt == "john" else hash_body
-    finally:
-        close_office(office)
+            hash_body = _office_hash_body(office, path)
+            return f"{path.name}:{hash_body}" if fmt == "john" else hash_body
+        finally:
+            close_office(office)
+    except (
+        AttributeError,
+        EOFError,
+        ImportError,
+        KeyError,
+        OSError,
+        OverflowError,
+        TypeError,
+        ValueError,
+        binascii.Error,
+        struct.error,
+        msoffcrypto.exceptions.DecryptionError,
+        msoffcrypto.exceptions.FileFormatError,
+        msoffcrypto.exceptions.ParseError,
+    ) as exc:
+        raise EncryptedDocumentError(
+            f"could not export Office hash for {path.name}: {exc}"
+        ) from exc
 
 
 def _office_hash_body(office, path: Path) -> str:
@@ -323,8 +367,6 @@ def _agile_hash_version(algorithm: str) -> int:
 
 def _export_standard_hash_from_ole(path: Path) -> str:
     """Parse ECMA-376 Standard / Office 2007 EncryptionInfo (office2john layout)."""
-    import struct
-
     import olefile
 
     path = Path(path)

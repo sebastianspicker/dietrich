@@ -43,13 +43,29 @@ def test_error_and_busy_dossier() -> None:
 
 
 def test_from_inspection_soft() -> None:
-    insp = DocumentInspection(
+    view = from_inspection(_soft_protection_inspection())
+    _assert_soft_dossier(view)
+
+
+def _soft_protection_inspection() -> DocumentInspection:
+    """Return the compact soft-protection inspection used by dossier assertions."""
+    return DocumentInspection(
         input_path=Path("book.xlsx"),
         document_format=DocumentFormat.EXCEL_OOXML,
         strategies=("soft:sheetProtection",),
         soft_protections=(ProtectedPart("xl/worksheets/sheet1.xml", "sheetProtection", 1),),
     )
-    view = from_inspection(insp)
+
+
+def _assert_soft_dossier(view: DossierView) -> None:
+    """Assert the public dossier representation for soft protection inspection."""
+    _assert_soft_dossier_header(view)
+    _assert_soft_dossier_findings(view)
+    _assert_soft_dossier_body(view)
+
+
+def _assert_soft_dossier_header(view: DossierView) -> None:
+    """Assert the fixed heading and metadata for a soft-protection dossier."""
     assert view.heading == "INSPECTION COMPLETE"
     assert view.title == "Soft structure locks"
     assert "not encryption" in view.lede.lower()
@@ -57,6 +73,9 @@ def test_from_inspection_soft() -> None:
     assert "SIGNED  NO" in view.metadata
     assert "IRM GATE  ACTIVE" in view.metadata
 
+
+def _assert_soft_dossier_findings(view: DossierView) -> None:
+    """Assert the semantic dossier rows for a soft-protection inspection."""
     labels = {label for label, _v, _t in view.findings}
     assert "Soft hits" in labels
     assert "Open password" in labels
@@ -71,6 +90,9 @@ def test_from_inspection_soft() -> None:
     irm = next(v for lab, v, _t in view.findings if lab == "IRM / Purview")
     assert irm == "None detected"
 
+
+def _assert_soft_dossier_body(view: DossierView) -> None:
+    """Assert the compact text rendering remains bounded and actionable."""
     body = format_dossier_body(view)
     assert body[0] == "Soft structure locks"
     assert any("Soft hits ·" in line for line in body)

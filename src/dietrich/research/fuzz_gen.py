@@ -1,10 +1,16 @@
-"""Experimental local-lab OOXML mutant generators (not a product unlock path)."""
+"""Experimental local-lab OOXML mutant generators (not a product unlock path).
+
+The seeded generator intentionally makes a fuzz case reproducible. It is never
+used for passwords, keys, or any other security-sensitive value.
+"""
 
 from __future__ import annotations
 
 import random
 import zipfile
 from pathlib import Path
+
+from dietrich.safety.zip_archive import validate_archive_safety
 
 
 def generate_ooxml_mutants(
@@ -62,23 +68,39 @@ def generate_xml_part_mutants(
     outputs: list[Path] = []
 
     try:
-        with zipfile.ZipFile(seed_path) as zf:
-            names = [n for n in zf.namelist() if n.endswith(".xml")]
-            if not names:
-                return generate_ooxml_mutants(seed_path, out_dir, count=count, seed=seed)
-            for i in range(count):
-                target = out_dir / f"xml_mutant_{seed}_{i:03d}{seed_path.suffix}"
-                with zipfile.ZipFile(target, "w") as out:
-                    for info in zf.infolist():
-                        data = zf.read(info)
-                        if info.filename == names[i % len(names)]:
-                            data = _mutate_xml_part(data, rng)
-                        out.writestr(info, data)
-                outputs.append(target)
+        parts, xml_names = _read_seed_parts(seed_path)
     except zipfile.BadZipFile:
         return generate_ooxml_mutants(seed_path, out_dir, count=count, seed=seed)
+    if not xml_names:
+        return generate_ooxml_mutants(seed_path, out_dir, count=count, seed=seed)
+
+    for i in range(count):
+        target = out_dir / f"xml_mutant_{seed}_{i:03d}{seed_path.suffix}"
+        _write_xml_mutant(target, parts, xml_names[i % len(xml_names)], rng)
+        outputs.append(target)
 
     return outputs
+
+
+def _read_seed_parts(seed_path: Path) -> tuple[list[tuple[zipfile.ZipInfo, bytes]], list[str]]:
+    """Read a bounded seed archive once and identify its XML mutation targets."""
+    with zipfile.ZipFile(seed_path) as archive:
+        validate_archive_safety(archive, allow_signed=True)
+        parts = [(info, archive.read(info)) for info in archive.infolist()]
+    return parts, [info.filename for info, _data in parts if info.filename.endswith(".xml")]
+
+
+def _write_xml_mutant(
+    target: Path,
+    parts: list[tuple[zipfile.ZipInfo, bytes]],
+    mutation_target: str,
+    rng: random.Random,
+) -> None:
+    """Write one mutant while retaining every seed member and its metadata."""
+    with zipfile.ZipFile(target, "w") as archive:
+        for info, original in parts:
+            data = _mutate_xml_part(original, rng) if info.filename == mutation_target else original
+            archive.writestr(info, data)
 
 
 def _mutate_xml_part(data: bytes, rng: random.Random) -> bytes:

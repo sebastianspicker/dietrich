@@ -19,6 +19,13 @@ dist/
 venv/
 .env
 .env.*
+!.env.example
+!.env.*.example
+!.env.sample
+!.env.template
+secrets.local.*
+credentials.local.*
+.npmrc.local
 
 # Test / lint caches
 .pytest_cache/
@@ -45,6 +52,11 @@ research/fuzz/corpus/
 # Local secrets / private workbooks (never publish)
 *.pem
 !tests/**/*.pem
+*.local.key
+*.p12
+*.pfx
+*.jks
+*.keystore
 private/
 local/
 *.local.xlsx
@@ -54,6 +66,39 @@ docs/screenshots/_demo*
 docs/screenshots/werkbank-visual-smoke.html
 /examples/out/
 examples/_work/
+
+# Nested local tooling and generated artifacts
+.agents/
+.claude/
+.codex/
+.codegraph/
+.serena/
+.kilo/
+.cursor/
+.repowise/
+.codacy/generated/
+.codacy/logs/
+.codacy/tools-configs/
+.codacy/cli-config.yaml
+coverage/
+playwright-report/
+blob-report/
+junit*.xml
+*.sarif
+node_modules/
+target/
+.build/
+DerivedData/
+xcuserdata/
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.local.db
+*.local.sqlite
+*.local.sqlite3
 
 # Local tooling and work notes
 /.agent/
@@ -66,6 +111,12 @@ examples/_work/
 /.internal/
 /.serena/
 /AGENTS.md
+/CLAUDE.md
+/GEMINI.md
+/AUDIT_LEDGER.md
+/remediation-ledger.md
+/plan.md
+/progress.md
 /*.ledger.md
 
 # Packaging

@@ -109,7 +109,8 @@ def test_e2e_encrypted_password(tmp_path: Path) -> None:
     )
     assert proc.returncode == 0, proc.stderr
     assert out.is_file()
-    assert out.read_bytes()[:2] == b"PK"
+    with out.open("rb") as handle:
+        assert handle.read(2) == b"PK"
     assert "Password: recovered" in proc.stdout or "Wrote:" in proc.stdout
 
 
@@ -298,4 +299,5 @@ def test_e2e_encrypted_docx_password(tmp_path: Path) -> None:
     )
     assert proc.returncode == 0, proc.stderr
     assert out.is_file()
-    assert out.read_bytes()[:2] == b"PK"
+    with out.open("rb") as handle:
+        assert handle.read(2) == b"PK"

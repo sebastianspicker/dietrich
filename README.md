@@ -14,6 +14,20 @@ formats may change before a stable release.
 The demo uses sanitized fixture data, cannot access local files, and marks all
 command-capable actions as simulated.
 
+Run the same static artifact locally from the repository root:
+
+```bash
+python3 -m http.server 8000 --directory site
+```
+
+Then open `http://127.0.0.1:8000/`. The files in `site/` use relative asset
+paths and are compatible with the `/dietrich/` repository subpath. GitHub Pages
+hosting for this demo is managed through the existing
+`sebastianspicker.github.io` site; this repository does not publish or deploy
+the demo itself. The central staging configuration is not part of this
+checkout, so the hosted page is not evidence that the current Dietrich
+worktree has been deployed.
+
 ## Purpose and scope
 
 Dietrich distinguishes between two protection layers:

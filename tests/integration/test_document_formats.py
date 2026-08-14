@@ -16,15 +16,9 @@ from dietrich import (
 )
 from dietrich.crypto.attack import expand_mask, run_attack
 from dietrich.types import AttackOptions, DocumentFormat
+from tests.support.ooxml import write_ooxml
 
-
-def _minimal_ooxml(path: Path, parts: dict[str, bytes]) -> Path:
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("[Content_Types].xml", b"<Types/>")
-        archive.writestr("_rels/.rels", b"<Relationships/>")
-        for name, data in parts.items():
-            archive.writestr(name, data)
-    return path
+_minimal_ooxml = write_ooxml
 
 
 def test_word_document_protection_removed(tmp_path: Path) -> None:

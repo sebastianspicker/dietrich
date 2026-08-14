@@ -9,8 +9,9 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
-import zipfile
 from pathlib import Path
+
+from tests.support.ooxml import write_ooxml
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -73,34 +74,31 @@ def normalize_capture(text: str, *, display_name: str | None = None) -> str:
 
 def write_signed_xlsx(path: Path) -> Path:
     """Minimal OOXML with a signature part (rejected unless --strip-signatures)."""
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("[Content_Types].xml", b"<Types/>")
-        archive.writestr("_rels/.rels", b"<Relationships/>")
-        archive.writestr(
-            "xl/workbook.xml",
-            b'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            b'<workbookProtection lockStructure="1"/><sheets/></workbook>',
-        )
-        archive.writestr(
-            "xl/worksheets/sheet1.xml",
-            b'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            b'<sheetProtection sheet="1"/><sheetData/></worksheet>',
-        )
-        archive.writestr("_xmlsignatures/sig1.xml", b"<Signature/>")
-    return path
+    return write_ooxml(
+        path,
+        {
+            "xl/workbook.xml": (
+                b'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+                b'<workbookProtection lockStructure="1"/><sheets/></workbook>'
+            ),
+            "xl/worksheets/sheet1.xml": (
+                b'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+                b'<sheetProtection sheet="1"/><sheetData/></worksheet>'
+            ),
+            "_xmlsignatures/sig1.xml": b"<Signature/>",
+        },
+    )
 
 
 def write_irm_like_xlsx(path: Path) -> Path:
     """Synthetic package that trips IRM detection (not a real IRM file)."""
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("[Content_Types].xml", b"<Types/>")
-        archive.writestr("_rels/.rels", b"<Relationships/>")
-        archive.writestr("xl/workbook.xml", b"<workbook/>")
-        archive.writestr(
-            "customXml/item1.xml",
-            b"<root>MicrosoftRightsManagement something</root>",
-        )
-    return path
+    return write_ooxml(
+        path,
+        {
+            "xl/workbook.xml": b"<workbook/>",
+            "customXml/item1.xml": b"<root>MicrosoftRightsManagement something</root>",
+        },
+    )
 
 
 def make_self_signed_pem(tmp: Path) -> tuple[Path, Path]:

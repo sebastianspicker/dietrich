@@ -6,9 +6,14 @@ import zipfile
 from pathlib import Path
 
 
-def write_ooxml(path: Path, parts: dict[str, bytes]) -> Path:
+def write_ooxml(
+    path: Path,
+    parts: dict[str, bytes],
+    *,
+    compression: int = zipfile.ZIP_DEFLATED,
+) -> Path:
     """Write a minimal OOXML ZIP with Content_Types/_rels defaults plus parts."""
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(path, "w", compression=compression) as archive:
         if "[Content_Types].xml" not in parts:
             archive.writestr("[Content_Types].xml", b"<Types/>")
         if "_rels/.rels" not in parts:

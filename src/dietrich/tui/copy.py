@@ -78,9 +78,7 @@ def _encrypted_lines(inspection: DocumentInspection) -> list[str]:
     lines = [f"What we found: open password required ({scheme})."]
     if inspection.encryption_spin_count:
         suffix = (
-            f" ({inspection.encryption_cost_class})"
-            if inspection.encryption_cost_class
-            else ""
+            f" ({inspection.encryption_cost_class})" if inspection.encryption_cost_class else ""
         )
         lines.append(
             f"Encryption cost: spin={inspection.encryption_spin_count}{suffix} - "

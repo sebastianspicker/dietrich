@@ -9,6 +9,7 @@ import pytest
 
 from dietrich import UnlockOptions, inspect_document, unlock_document
 from dietrich.types import DocumentFormat
+from tests.support.cli import make_restricted_pdf
 from tests.support.ooxml import protected_docx, protected_pptx, protected_xlsx
 
 
@@ -53,16 +54,7 @@ def test_pdf_owner_permissions_strip(tmp_path: Path) -> None:
     pikepdf = pytest.importorskip("pikepdf")
     src = tmp_path / "restricted.pdf"
     out = tmp_path / "open.pdf"
-    pdf = pikepdf.new()
-    pdf.add_blank_page(page_size=(200, 200))
-    pdf.save(
-        src,
-        encryption=pikepdf.Encryption(
-            owner="owner-secret",
-            user="",
-            allow=pikepdf.Permissions(extract=False, modify_annotation=False),
-        ),
-    )
+    make_restricted_pdf(src)
     result = unlock_document(src, out, UnlockOptions())
     assert out.is_file()
     assert result.removed.pdf_permission_strips >= 1

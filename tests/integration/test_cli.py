@@ -2,35 +2,18 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 import zipfile
+from functools import partial
 from pathlib import Path
 
 import pytest
 
+from tests.support.cli import run_dietrich
 from tests.support.fixtures import ENCRYPTED_XLSX, KNOWN_PASSWORD
+from tests.support.ooxml import write_ooxml
 
-ROOT = Path(__file__).resolve().parents[2]
-
-
-def _run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, "-m", "dietrich", *args],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=check,
-    )
-
-
-def _pack(path: Path, parts: dict[str, bytes]) -> Path:
-    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("[Content_Types].xml", b"<Types/>")
-        archive.writestr("_rels/.rels", b"<Relationships/>")
-        for name, data in parts.items():
-            archive.writestr(name, data)
-    return path
+_run = partial(run_dietrich, check=True)
+_pack = write_ooxml
 
 
 def test_cli_inspect_and_unlock_xlsx(tmp_path: Path) -> None:
