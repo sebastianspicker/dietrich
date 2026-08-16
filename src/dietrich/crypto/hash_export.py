@@ -24,13 +24,6 @@ def export_hash(path: Path, document_format: DocumentFormat, fmt: str = "hashcat
         DocumentFormat.UNKNOWN,
     }:
         # Encrypted Office is OLE; attempt real export or raise.
-        try:
-            return ooxml_crypto.export_hash_line(path, fmt)
-        except EncryptedDocumentError:
-            raise
-        except Exception as exc:
-            raise EncryptedDocumentError(
-                f"could not export Office hash for {path.name}: {exc}"
-            ) from exc
+        return ooxml_crypto.export_hash_line(path, fmt)
 
     raise EncryptedDocumentError(f"hash export not supported for format {document_format.value}")

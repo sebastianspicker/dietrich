@@ -21,7 +21,6 @@ from textual.widgets.option_list import Option
 
 from dietrich.brand import PRODUCT_NAME, SUBTITLE
 from dietrich.dispatch import export_document_hash, inspect_document, unlock_document
-from dietrich.errors import DietrichError
 from dietrich.tui.compose import compose_app
 from dietrich.tui.dossier import (
     DossierView,
@@ -38,6 +37,7 @@ from dietrich.tui.options_map import (
     validate_and_build,
 )
 from dietrich.tui.session_history import RecentSession, note_from_inspection
+from dietrich.tui.tasks import export_hash_message, export_hash_task, inspect_task, unlock_task
 from dietrich.tui.theme import register_dietrich_theme
 from dietrich.types import DocumentInspection, UnlockOptions, UnlockResult
 
@@ -106,7 +106,7 @@ class DietrichApp(App[None]):
 
     def _log(self, message: str) -> None:
         """Append one line to the activity log."""
-        timestamp = datetime.now().strftime("%H:%M:%S")
+        timestamp = datetime.now().time().isoformat(timespec="seconds")
         self.query_one("#log", Log).write_line(f"{timestamp}  {message}")
 
     def _refresh_recent_list(self) -> None:
@@ -147,6 +147,11 @@ class DietrichApp(App[None]):
         self.query_one("#session-state", Static).update("WORKING" if busy else "READY")
         foot = "● working · no network" if busy else "● ready · no network"
         self.query_one("#session-foot", Static).update(foot)
+
+    @property
+    def is_busy(self) -> bool:
+        """Return whether a background document operation is running."""
+        return self._busy
 
     def _input_path(self) -> Path | None:
         """Return a validated existing file path, or log+show an error and return None."""
@@ -281,15 +286,11 @@ class DietrichApp(App[None]):
     @work(exclusive=True, thread=True)
     def _run_inspect(self, path: Path) -> None:
         """Worker: call inspect_document and marshal result back to the UI thread."""
-        try:
-            inspection = inspect_document(path)
-        except DietrichError as exc:
-            self.call_from_thread(self._inspect_failed, str(exc))
+        task = inspect_task(path, inspect=inspect_document)
+        if task.failure is not None:
+            self.call_from_thread(self._inspect_failed, task.failure.display_message)
             return
-        except Exception as exc:
-            self.call_from_thread(self._inspect_failed, f"unexpected: {exc}")
-            return
-        self.call_from_thread(self._inspect_ok, inspection)
+        self.call_from_thread(self._inspect_ok, task.require_value())
 
     def _inspect_failed(self, message: str) -> None:
         """UI-thread handler for inspect errors."""
@@ -340,15 +341,11 @@ class DietrichApp(App[None]):
     @work(exclusive=True, thread=True)
     def _run_unlock(self, source: Path, target: Path, options: UnlockOptions) -> None:
         """Worker: unlock_document then post success/failure to the UI thread."""
-        try:
-            result = unlock_document(source, target, options)
-        except DietrichError as exc:
-            self.call_from_thread(self._unlock_failed, str(exc))
+        task = unlock_task(source, target, options, unlock=unlock_document)
+        if task.failure is not None:
+            self.call_from_thread(self._unlock_failed, task.failure.display_message)
             return
-        except Exception as exc:
-            self.call_from_thread(self._unlock_failed, f"unexpected: {exc}")
-            return
-        self.call_from_thread(self._unlock_ok, result)
+        self.call_from_thread(self._unlock_ok, task.require_value())
 
     def _unlock_failed(self, message: str) -> None:
         """UI-thread handler for unlock errors; clears busy flag."""
@@ -379,16 +376,8 @@ class DietrichApp(App[None]):
     @work(exclusive=True, thread=True)
     def _run_export(self, path: Path) -> None:
         """Worker: export_document_hash and log a truncated line."""
-        try:
-            line = export_document_hash(path, "hashcat")
-        except DietrichError as exc:
-            self.call_from_thread(self._export_done, f"export-hash error: {exc}")
-            return
-        except Exception as exc:
-            self.call_from_thread(self._export_done, f"export-hash unexpected: {exc}")
-            return
-        display = line if len(line) <= 160 else line[:140] + "…"
-        self.call_from_thread(self._export_done, f"hashcat line: {display}")
+        task = export_hash_task(path, export=export_document_hash)
+        self.call_from_thread(self._export_done, export_hash_message(task))
 
     def _export_done(self, message: str) -> None:
         """UI-thread handler for export-hash completion; clears busy flag."""

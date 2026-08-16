@@ -10,6 +10,7 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 from dietrich.brand import HELP_DESCRIPTION, HELP_EPILOG
@@ -58,7 +59,6 @@ def _execute_parsed_args(args: argparse.Namespace, parser: argparse.ArgumentPars
     if not args.input:
         parser.error("INPUT is required (or pass --tui for the terminal UI)")
     return _run_document_command(args)
-
 
 
 def _run_tui(input_path: str | None) -> int:
@@ -124,10 +124,11 @@ def _with_default_brute_options(options: UnlockOptions, args: argparse.Namespace
     """Apply the documented bounded brute-force defaults when requested."""
     if not args.brute or args.charset:
         return options
-    overrides = {"charset": "digits"}
-    if options.max_length is None:
-        overrides["max_length"] = 4
-    return UnlockOptions(**{**options.__dict__, **overrides})
+    return replace(
+        options,
+        charset="digits",
+        max_length=4 if options.max_length is None else options.max_length,
+    )
 
 
 def _print_document_inspection(inspection: DocumentInspection, *, as_json: bool) -> None:
@@ -206,7 +207,6 @@ def _add_document_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="PowerPoint: keep modifyVerifier",
     )
-
 
 
 def _add_recovery_arguments(parser: argparse.ArgumentParser) -> None:
@@ -318,6 +318,13 @@ def _print_inspection(inspection: DocumentInspection) -> None:
     print(f"User password required: {inspection.user_password_required}")
     print(f"Owner restrictions: {inspection.owner_restrictions}")
     print(f"VBA project: {'present' if inspection.vba_project_present else 'absent'}")
+    _print_encryption_details(inspection)
+    _print_irm_status(inspection.input_path)
+    _print_inspection_collections(inspection)
+
+
+def _print_encryption_details(inspection: DocumentInspection) -> None:
+    """Print optional open-encryption metadata."""
     if inspection.encryption_scheme:
         print(f"Encryption scheme: {inspection.encryption_scheme}")
         print(f"Encryption version: {inspection.encryption_version}")
@@ -325,14 +332,21 @@ def _print_inspection(inspection: DocumentInspection) -> None:
         print(f"Cost class: {inspection.encryption_cost_class}")
         if inspection.hashcat_mode:
             print(f"Hashcat mode: {inspection.hashcat_mode}")
-    # IRM probe
+
+
+def _print_irm_status(path: Path) -> None:
+    """Print the best-effort rights-management probe result."""
     try:
         from dietrich.crypto.irm import detect_irm
 
-        irm = detect_irm(inspection.input_path)
+        irm = detect_irm(path)
         print(f"IRM/RMS: {'yes (' + irm.kind + ')' if irm.is_irm else 'no'}")
-    except Exception:
+    except (AttributeError, OSError, TypeError, ValueError):
         print("IRM/RMS: unknown")
+
+
+def _print_inspection_collections(inspection: DocumentInspection) -> None:
+    """Print strategy, soft-protection, and note collections."""
     print("Strategies:")
     for strategy in inspection.strategies:
         print(f"  - {strategy}")

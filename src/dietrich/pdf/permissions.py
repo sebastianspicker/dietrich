@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 from dietrich.errors import EncryptedDocumentError, MissingDependencyError, OutputExistsError
-from dietrich.safety.publish import publish_output
+from dietrich.safety.publish import publish_output, temporary_output_path
 from dietrich.types import DocumentFormat, RemovalCounts, UnlockOptions, UnlockResult
 
 
@@ -18,14 +17,9 @@ def unlock_pdf(input_path: Path, output_path: Path, options: UnlockOptions) -> U
     _require_output_path(target, options)
 
     password = options.password or ""
-    temp_path = _make_temporary_pdf_path(target)
-    try:
+    with temporary_output_path(target) as temp_path:
         stripped = _save_unrestricted_pdf(pikepdf, source, temp_path, password, options)
         publish_output(temp_path, target, overwrite=options.overwrite)
-        temp_path = None
-    finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
 
     warnings = ("PDF encryption/restrictions removed from working copy.",) if stripped else ()
     return UnlockResult(
@@ -53,17 +47,6 @@ def _require_output_path(target: Path, options: UnlockOptions) -> None:
     """Fail before work when the requested output already exists."""
     if target.exists() and not options.overwrite:
         raise OutputExistsError(f"{target} already exists.")
-
-
-def _make_temporary_pdf_path(target: Path) -> Path:
-    """Allocate an output-adjacent temporary path for atomic publication."""
-    with tempfile.NamedTemporaryFile(
-        prefix=f".{target.name}.",
-        suffix=".tmp",
-        dir=target.parent if target.parent.exists() else None,
-        delete=False,
-    ) as temporary_file:
-        return Path(temporary_file.name)
 
 
 def _save_unrestricted_pdf(

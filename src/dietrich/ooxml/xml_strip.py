@@ -7,12 +7,17 @@ markup or namespace declarations.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from xml.parsers.expat import ExpatError, ParserCreate
+from pyexpat import ExpatError, ParserCreate
+from typing import Any, TypeAlias
 
 from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
 
 from dietrich.errors import InvalidDocumentError
+
+# defusedxml deliberately proxies the stdlib element implementation without
+# exporting its concrete class. Keep annotations parser-agnostic at that seam.
+ElementLike: TypeAlias = Any
 
 
 @dataclass(frozen=True)
@@ -76,6 +81,11 @@ def remove_elements_from_xml_bytes(
 
 def find_element_ranges(source: bytes, element_local_name: str, path: str) -> list[ElementRange]:
     """Return byte ranges of elements to remove."""
+    try:
+        ElementTree.fromstring(source)
+    except (DefusedXmlException, ElementTree.ParseError) as exc:
+        raise InvalidDocumentError(f"{path} is not valid XML: {exc}") from exc
+
     parser = ParserCreate(namespace_separator="}")
     stack: list[ElementFrame] = []
     ranges: list[ElementRange] = []

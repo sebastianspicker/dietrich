@@ -9,7 +9,8 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
-from dietrich.errors import InvalidDocumentError
+from dietrich.errors import EncryptedDocumentError, InvalidDocumentError, MissingDependencyError
+from dietrich.safety.bounded_io import read_file_prefix
 from dietrich.types import DocumentFormat, DocumentInspection
 
 CFBF_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
@@ -23,7 +24,7 @@ def classify_path(path: Path) -> DocumentInspection:
     if not input_path.is_file():
         raise InvalidDocumentError(f"{input_path} is not a file.")
 
-    header = input_path.read_bytes()[:8]
+    header = read_file_prefix(input_path, 8)
 
     if header.startswith(PDF_MAGIC):
         return _classify_pdf(input_path)
@@ -114,7 +115,7 @@ def _cfbf_stream_summary(streams: set[str], strategies: list[str], notes: list[s
 
 def _cfbf_heuristic_summary(path: Path, strategies: list[str], notes: list[str]):
     """Use the original bounded byte heuristic when olefile is unavailable."""
-    blob = path.read_bytes()[:65536]
+    blob = read_file_prefix(path, 65_536)
     if b"EncryptionInfo" in blob or b"EncryptedPackage" in blob:
         strategies.extend(("crypto:ooxml_password", "crypto:wordlist", "crypto:export_hash"))
         return DocumentFormat.ENCRYPTED_OOXML, True, strategies, notes
@@ -135,7 +136,15 @@ def _cfbf_encryption_metadata(path: Path, encrypted: bool, notes: list[str], str
         if meta.hashcat_mode:
             strategies.append(f"crypto:hashcat_mode_{meta.hashcat_mode}")
         return meta.scheme, meta.version_label, meta.spin_count, meta.cost_class, meta.hashcat_mode
-    except Exception as exc:
+    except (
+        AttributeError,
+        EncryptedDocumentError,
+        KeyError,
+        MissingDependencyError,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as exc:
         notes.append(f"Encryption metadata limited: {exc}")
         return None, None, None, None, None
 
@@ -158,7 +167,7 @@ def _classify_zip_ooxml(path: Path) -> DocumentInspection:
 
 def detect_encrypted_ooxml(path: Path) -> bool:
     """True if path looks like encrypted OOXML-in-OLE."""
-    header = path.read_bytes()[:8]
+    header = read_file_prefix(path, 8)
     if header.startswith(CFBF_MAGIC):
         inspection = _classify_cfbf(path)
         return inspection.document_format == DocumentFormat.ENCRYPTED_OOXML

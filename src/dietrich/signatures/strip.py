@@ -5,7 +5,7 @@ from __future__ import annotations
 from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
 
-from dietrich.ooxml.xml_strip import local_name
+from dietrich.ooxml.xml_strip import ElementLike, local_name
 from dietrich.safety.zip_archive import is_signed_package_member
 
 CONTENT_TYPES = "[Content_Types].xml"
@@ -81,7 +81,7 @@ def _strip_content_types(source: bytes, skip: set[str]) -> bytes:
     return _serialize_like_source(root, source)
 
 
-def _content_type_removals(root, skip: set[str]) -> list[ElementTree.Element]:
+def _content_type_removals(root: ElementLike, skip: set[str]) -> list[ElementLike]:
     """Collect content-type entries associated with removed signature members."""
     return [child for child in list(root) if _is_signature_content_type(child, skip)]
 
@@ -129,8 +129,10 @@ def _is_signature_relationship(child) -> bool:
         return False
     target = (_attribute_ending_in(child.attrib, "Target") or "").lower()
     rel_type = (_attribute_ending_in(child.attrib, "Type") or "").lower()
-    return "_xmlsignatures" in target or "digitalsignature" in target or any(
-        marker in rel_type for marker in ("digitalsignature", "digital-signature")
+    return (
+        "_xmlsignatures" in target
+        or "digitalsignature" in target
+        or any(marker in rel_type for marker in ("digitalsignature", "digital-signature"))
     )
 
 

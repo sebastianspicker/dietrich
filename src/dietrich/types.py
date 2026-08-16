@@ -233,3 +233,23 @@ class PartStats:
             vba_unlocked=self.counts.get("vba", 0),
             other=self.counts.get("other", 0),
         )
+
+
+__all__ = [
+    "annotations",
+    "dataclass",
+    "field",
+    "StrEnum",
+    "Path",
+    "DocumentFormat",
+    "ProtectedPart",
+    "ProtectedWorksheet",
+    "WorkbookInspection",
+    "DocumentInspection",
+    "UnlockOptions",
+    "RemovalCounts",
+    "UnlockResult",
+    "AttackOptions",
+    "AttackResult",
+    "PartStats",
+]

@@ -6,11 +6,14 @@ Does not open-password decrypt - that is the msoffcrypto hard path.
 
 from __future__ import annotations
 
+import shutil
 import struct
+from collections.abc import Iterator
 from pathlib import Path
 
 from dietrich.errors import InvalidDocumentError, OutputExistsError, UnsupportedFormatError
 from dietrich.legacy.cfb_io import patch_streams, read_streams
+from dietrich.safety.publish import publish_output, temporary_output_path
 from dietrich.types import DocumentFormat, RemovalCounts, UnlockOptions, UnlockResult
 
 # BIFF record types related to protection (Excel)
@@ -44,34 +47,33 @@ def unlock_binary_office(
 
     patches, counts = _build_patches(source, streams)
 
-    if not patches:
-        # Still write a copy so output exists; zero removals
-        target.write_bytes(source.read_bytes())
-        return UnlockResult(
-            input_path=source,
-            output_path=target,
-            removed=RemovalCounts(),
-            document_format=DocumentFormat.LEGACY_CFBF,
-            warnings=("No binary protection records found; wrote unchanged copy.",),
-        )
+    with temporary_output_path(target) as temp_path:
+        if not patches:
+            # Still write a copy so output exists; zero removals.
+            shutil.copy2(source, temp_path)
+            warnings = ("No binary protection records found; wrote unchanged copy.",)
+            result_counts = RemovalCounts()
+        else:
+            try:
+                patch_streams(source, temp_path, patches)
+            except Exception as exc:
+                raise InvalidDocumentError(f"failed to write patched OLE: {exc}") from exc
+            warnings = ("Soft-cleared binary Office protection records.",)
+            result_counts = counts
 
-    try:
-        patch_streams(source, target, patches)
-    except Exception as exc:
-        raise InvalidDocumentError(f"failed to write patched OLE: {exc}") from exc
+        try:
+            read_streams(temp_path)
+        except Exception as exc:
+            raise InvalidDocumentError(f"patched OLE failed validation: {exc}") from exc
 
-    # Verify readable
-    try:
-        read_streams(target)
-    except Exception as exc:
-        raise InvalidDocumentError(f"patched OLE failed validation: {exc}") from exc
+        publish_output(temp_path, target, overwrite=options.overwrite)
 
     return UnlockResult(
         input_path=source,
         output_path=target,
-        removed=counts,
+        removed=result_counts,
         document_format=DocumentFormat.LEGACY_CFBF,
-        warnings=("Soft-cleared binary Office protection records.",),
+        warnings=warnings,
     )
 
 
@@ -201,19 +203,39 @@ def _walk_biff_protection_records(buf, protection_lengths, cleared_at: set[int])
 
 def _scan_biff_protection_markers(buf, protection_lengths, cleared_at: set[int]) -> int:
     """Clear valid protection markers that appear in malformed or injected streams."""
-    cleared = 0
+    return sum(
+        _clear_biff_marker_matches(buf, record_type, length, cleared_at)
+        for record_type, length in _biff_marker_specs(protection_lengths)
+    )
+
+
+def _biff_marker_specs(protection_lengths) -> Iterator[tuple[int, int]]:
+    """Yield protection record type and payload-length combinations to scan."""
     for record_type, lengths in protection_lengths.items():
         for length in lengths:
-            marker = struct.pack("<HH", record_type, length)
-            start = 0
-            while True:
-                index = buf.find(marker, start)
-                if index < 0 or index + 4 + length > len(buf):
-                    break
-                if _is_clearable_biff_payload(buf[index + 4 : index + 4 + length], record_type):
-                    cleared += _clear_biff_record(buf, index, length, cleared_at)
-                start = index + 2
-    return cleared
+            yield record_type, length
+
+
+def _clear_biff_marker_matches(buf, record_type: int, length: int, cleared_at: set[int]) -> int:
+    """Clear conservative matches for one BIFF header shape."""
+    return sum(
+        _clear_biff_record(buf, index, length, cleared_at)
+        for index in _clearable_biff_marker_offsets(buf, record_type, length)
+    )
+
+
+def _clearable_biff_marker_offsets(buf, record_type: int, length: int) -> Iterator[int]:
+    """Yield valid, non-zero protection records for a marker header."""
+    marker = struct.pack("<HH", record_type, length)
+    start = 0
+    while (index := buf.find(marker, start)) >= 0:
+        payload_end = index + 4 + length
+        if payload_end > len(buf):
+            return
+        payload = buf[index + 4 : payload_end]
+        if _is_clearable_biff_payload(payload, record_type):
+            yield index
+        start = index + 2
 
 
 def _is_clearable_biff_payload(payload: bytes, record_type: int) -> bool:

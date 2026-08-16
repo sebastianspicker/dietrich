@@ -9,7 +9,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from dietrich.errors import EncryptedDocumentError, MissingDependencyError
+from dietrich.errors import EncryptedDocumentError, InvalidDocumentError, MissingDependencyError
 from dietrich.process import run_pdf2john_sync
 
 
@@ -32,7 +32,7 @@ def try_password(path: Path, password: str) -> bool:
             return True
     except pikepdf.PasswordError:
         return False
-    except Exception:
+    except (OSError, pikepdf.PdfError, TypeError, ValueError):
         return False
 
 
@@ -58,7 +58,7 @@ def export_hash_line(path: Path, fmt: str = "hashcat") -> str:
     path = Path(path)
     try:
         return _native_hash_line(path, fmt)
-    except Exception as exc:
+    except (EncryptedDocumentError, InvalidDocumentError, OSError, TypeError, ValueError) as exc:
         native_error = exc
     fallback = _pdf2john_hash_line(path, fmt)
     if fallback is not None:

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dietrich.errors import EncryptedDocumentError, MissingDependencyError, PasswordNotFoundError
-from dietrich.process import run_hashcat_argv_sync
+from dietrich.process import ProcessResult, run_hashcat_argv_sync
 
 
 @dataclass(frozen=True)
@@ -35,6 +35,18 @@ class _HashcatFiles:
     pot: Path
     output: Path
     hash_input: Path
+
+
+@dataclass(frozen=True)
+class _HashcatOptions:
+    """Inputs that define one hashcat attack while its files stay private."""
+
+    mode: int
+    wordlist: Path | None
+    mask: str | None
+    extra_args: tuple[str, ...]
+    workload: str
+    timeout: int | None
 
 
 def find_hashcat() -> str:
@@ -76,19 +88,36 @@ def run_hashcat_for_office(
     - extra_args may supply additional hashcat options; if neither wordlist nor mask
       is set, extra_args alone must supply a complete attack (caller validates).
     """
+    options = _HashcatOptions(
+        mode=mode,
+        wordlist=wordlist,
+        mask=mask,
+        extra_args=tuple(extra_args or ()),
+        workload=workload,
+        timeout=timeout,
+    )
     hashcat = find_hashcat()
-    extra_args = list(extra_args or [])
 
     with tempfile.TemporaryDirectory(prefix="dietrich-hashcat-") as tmp:
-        tmp_path = Path(tmp)
+        workspace = Path(tmp)
         body = normalize_hash_body(hash_line)
-        hash_file = _write_hash_file(tmp_path, body)
-        out_file = tmp_path / "cracked.txt"
-        pot = potfile or tmp_path / "potfile"
-        files = _HashcatFiles(pot=pot, output=out_file, hash_input=hash_file)
-        command = _hashcat_command(hashcat, mode, wordlist, mask, workload, files, extra_args)
-        process = _run_hashcat(command, timeout)
-        return _hashcat_result(process, command, out_file, pot, body, mode)
+        files = _prepare_hashcat_files(workspace, body, potfile)
+        command = _hashcat_command(hashcat, options, files)
+        process = _run_hashcat(command, options.timeout)
+        return _hashcat_result(process, command, files, body, options.mode)
+
+
+def _prepare_hashcat_files(
+    workspace: Path,
+    body: str,
+    potfile: Path | None,
+) -> _HashcatFiles:
+    """Create the one-hash input and derive hashcat's adjacent working files."""
+    return _HashcatFiles(
+        pot=potfile or workspace / "potfile",
+        output=workspace / "cracked.txt",
+        hash_input=_write_hash_file(workspace, body),
+    )
 
 
 def _write_hash_file(directory: Path, body: str) -> Path:
@@ -98,37 +127,40 @@ def _write_hash_file(directory: Path, body: str) -> Path:
     return path
 
 
-def _hashcat_command(
-    hashcat: str, mode: int, wordlist: Path | None, mask: str | None, workload: str,
-    files: _HashcatFiles, extra_args: list[str],
-) -> list[str]:
+def _hashcat_command(hashcat: str, options: _HashcatOptions, files: _HashcatFiles) -> list[str]:
     """Build a shell-free hashcat argv for a dictionary or mask attack."""
-    if wordlist is not None and mask:
+    if options.wordlist is not None and options.mask:
         raise EncryptedDocumentError("pass either --wordlist or --mask with --hashcat, not both")
-    command = _hashcat_base_command(
-        hashcat, mode, workload, files.pot, files.output, files.hash_input, mask is not None
-    )
-    if mask:
-        command.append(mask)
-    elif wordlist is not None:
-        command.append(_wordlist_path(wordlist))
-    command.extend(extra_args)
+    command = _hashcat_base_command(hashcat, options, files)
+    if options.mask:
+        command.append(options.mask)
+    elif options.wordlist is not None:
+        command.append(_wordlist_path(options.wordlist))
+    command.extend(options.extra_args)
     return command
 
 
 def _hashcat_base_command(
     hashcat: str,
-    mode: int,
-    workload: str,
-    pot: Path,
-    out_file: Path,
-    hash_file: Path,
-    is_mask: bool,
+    options: _HashcatOptions,
+    files: _HashcatFiles,
 ) -> list[str]:
     """Create common argv fields while varying only hashcat's attack-mode value."""
     return [
-        hashcat, "-m", str(mode), "-a", "3" if is_mask else "0", "-w", workload,
-        "--potfile-path", str(pot), "-o", str(out_file), "--outfile-format", "2", str(hash_file),
+        hashcat,
+        "-m",
+        str(options.mode),
+        "-a",
+        "3" if options.mask is not None else "0",
+        "-w",
+        options.workload,
+        "--potfile-path",
+        str(files.pot),
+        "-o",
+        str(files.output),
+        "--outfile-format",
+        "2",
+        str(files.hash_input),
     ]
 
 
@@ -140,7 +172,7 @@ def _wordlist_path(wordlist: Path) -> str:
     return str(path)
 
 
-def _run_hashcat(command: list[str], timeout: int | None):
+def _run_hashcat(command: list[str], timeout: int | None) -> ProcessResult:
     """Run controlled hashcat argv and translate launch failures."""
     try:
         return run_hashcat_argv_sync(command, timeout=timeout)
@@ -153,11 +185,15 @@ def _run_hashcat(command: list[str], timeout: int | None):
 
 
 def _hashcat_result(
-    process, command: list[str], out_file: Path, pot: Path, body: str, mode: int
+    process: ProcessResult,
+    command: list[str],
+    files: _HashcatFiles,
+    body: str,
+    mode: int,
 ) -> HashcatRunResult:
     """Return a common result record after checking temporary outputs for a password."""
     output = ((process.stdout or "") + "\n" + (process.stderr or ""))[-2000:]
-    password = _read_cracked_password(out_file, pot, body)
+    password = _read_cracked_password(files.output, files.pot, body)
     if password is not None:
         return HashcatRunResult(
             True, password, mode, tuple(command), output, "password found via hashcat"

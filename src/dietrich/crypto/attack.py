@@ -9,13 +9,15 @@ from __future__ import annotations
 import itertools
 import string
 from collections.abc import Callable, Iterator
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import CancelledError, ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
 from dietrich.errors import EncryptedDocumentError
 from dietrich.types import AttackOptions, AttackResult
 
 VerifierFn = Callable[[str], bool]
+FileAttackWorker = Callable[[tuple[str, str]], str | None]
 
 CHARSETS: dict[str, str] = {
     "digits": string.digits,
@@ -114,7 +116,7 @@ def run_attack(verifier: VerifierFn, options: AttackOptions) -> AttackResult:
                     candidates_tried=tried,
                     message="password found",
                 )
-        except Exception:
+        except (EncryptedDocumentError, OSError, RuntimeError, TypeError, ValueError):
             continue
     return AttackResult(
         success=False,
@@ -132,7 +134,7 @@ def _try_ooxml_password(args: tuple[str, str]) -> str | None:
     try:
         if try_password(Path(path_str), password):
             return password
-    except Exception:
+    except (EncryptedDocumentError, OSError, RuntimeError, TypeError, ValueError):
         return None
     return None
 
@@ -145,7 +147,7 @@ def _try_pdf_password(args: tuple[str, str]) -> str | None:
     try:
         if try_password(Path(path_str), password):
             return password
-    except Exception:
+    except (EncryptedDocumentError, OSError, RuntimeError, TypeError, ValueError):
         return None
     return None
 
@@ -168,7 +170,9 @@ def run_file_attack(
     return _run_parallel_file_attack(path, candidates, worker, options.workers)
 
 
-def _run_serial_file_attack(path: Path, candidates: list[str], worker: VerifierFn) -> AttackResult:
+def _run_serial_file_attack(
+    path: Path, candidates: list[str], worker: FileAttackWorker
+) -> AttackResult:
     """Try candidate passwords in order without creating child processes."""
     for tried, password in enumerate(candidates, start=1):
         found = worker((str(path), password))
@@ -178,7 +182,7 @@ def _run_serial_file_attack(path: Path, candidates: list[str], worker: VerifierF
 
 
 def _run_parallel_file_attack(
-    path: Path, candidates: list[str], worker: VerifierFn, workers: int
+    path: Path, candidates: list[str], worker: FileAttackWorker, workers: int
 ) -> AttackResult:
     """Submit independent candidates and cancel pending work after a match."""
     with ProcessPoolExecutor(max_workers=workers) as pool:
@@ -186,7 +190,15 @@ def _run_parallel_file_attack(
         for tried, future in enumerate(as_completed(futures), start=1):
             try:
                 result = future.result()
-            except Exception:
+            except (
+                BrokenProcessPool,
+                CancelledError,
+                EncryptedDocumentError,
+                OSError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ):
                 result = None
             if result is not None:
                 for pending in futures:
