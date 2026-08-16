@@ -1,3 +1,4 @@
+---
 # Keep tests in the global analysis scope. Bandit and Pylint retain their
 # documented test-specific policy in pyproject.toml; Ruff and other configured
 # analyzers inspect the test corpus.

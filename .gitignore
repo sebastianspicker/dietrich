@@ -76,10 +76,6 @@ examples/_work/
 .kilo/
 .cursor/
 .repowise/
-.codacy/generated/
-.codacy/logs/
-.codacy/tools-configs/
-.codacy/cli-config.yaml
 coverage/
 playwright-report/
 blob-report/
@@ -104,7 +100,10 @@ xcuserdata/
 /.agent/
 /.agents/
 /.claude/
-/.codacy/
+/.codacy/*
+!/.codacy/codacy.config.json
+!/.codacy/codacy.yaml
+!/.codacy/codacy.yml
 /.codegraph/
 /.codex/
 /.cursor/

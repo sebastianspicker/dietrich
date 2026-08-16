@@ -467,16 +467,18 @@ def _decode_pdf_literal_byte(payload: bytes, index: int) -> tuple[int | None, in
     named = {ord("n"): 10, ord("r"): 13, ord("t"): 9, ord("b"): 8, ord("f"): 12}
     if escaped in named:
         return named[escaped], index + 2
-    if escaped == 0x0A:
-        return None, index + 2
-    if escaped == 0x0D:
-        next_index = (
-            index + 3 if index + 2 < len(payload) and payload[index + 2] == 0x0A else index + 2
-        )
-        return None, next_index
+    if escaped in (0x0A, 0x0D):
+        return None, _line_continuation_end(payload, index, escaped)
     if 0x30 <= escaped <= 0x37:
         return _decode_octal_escape(payload, index + 1)
     return escaped, index + 2
+
+
+def _line_continuation_end(payload: bytes, index: int, escaped: int) -> int:
+    """Skip one escaped PDF line ending, including a CRLF pair."""
+    if escaped == 0x0D and index + 2 < len(payload) and payload[index + 2] == 0x0A:
+        return index + 3
+    return index + 2
 
 
 def _decode_octal_escape(payload: bytes, start: int) -> tuple[int, int]:
@@ -494,20 +496,24 @@ def _file_id_hex(raw: bytes) -> str | None:
         return None
     start = match.end()
     if raw[start] == ord("<"):
-        end = raw.find(b">", start + 1)
-        if end < 0:
-            return None
-        payload = raw[start + 1 : end]
-        compact = payload.translate(None, b"\x00\t\n\x0c\r ")
-        if not compact or re.fullmatch(rb"[0-9A-Fa-f]+", compact) is None:
-            return None
-        if len(compact) % 2:
-            compact += b"0"
-        return compact.decode("ascii").lower()
+        return _hex_file_id(raw, start)
     if raw[start] == ord("("):
         payload = _literal_payload(raw, start)
         return _decode_pdf_literal(payload).hex() if payload is not None else None
     return None
+
+
+def _hex_file_id(raw: bytes, start: int) -> str | None:
+    """Normalize the first angle-bracket PDF file identifier."""
+    end = raw.find(b">", start + 1)
+    if end < 0:
+        return None
+    compact = raw[start + 1 : end].translate(None, b"\x00\t\n\x0c\r ")
+    if not compact or re.fullmatch(rb"[0-9A-Fa-f]+", compact) is None:
+        return None
+    if len(compact) % 2:
+        compact += b"0"
+    return compact.decode("ascii").lower()
 
 
 def _literal_payload(raw: bytes, start: int) -> bytes | None:

@@ -179,3 +179,34 @@ def test_export_pdf_hash_rejects_unsupported_revision(
 )
 def test_file_id_parses_complete_hex_and_literal_values(raw: bytes, expected: str) -> None:
     assert pdf_hash._file_id_hex(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"%PDF\ntrailer << >>",
+        b"%PDF\ntrailer << /ID [",
+        b"%PDF\ntrailer << /ID [<>] >>",
+        b"%PDF\ntrailer << /ID [<not-hex>] >>",
+        b"%PDF\ntrailer << /ID [(unterminated] >>",
+        b"%PDF\ntrailer << /ID [/Name] >>",
+    ],
+)
+def test_file_id_rejects_missing_or_malformed_values(raw: bytes) -> None:
+    assert pdf_hash._file_id_hex(raw) is None
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        (b"plain", b"plain"),
+        (b"named\\n", b"named\n"),
+        (b"joined\\\nline", b"joinedline"),
+        (b"joined\\\rline", b"joinedline"),
+        (b"joined\\\r\nline", b"joinedline"),
+        (rb"octal\053", b"octal+"),
+        (b"trailing\\", b"trailing\\"),
+    ],
+)
+def test_literal_decoder_preserves_escape_contract(payload: bytes, expected: bytes) -> None:
+    assert pdf_hash._decode_pdf_literal(payload) == expected
