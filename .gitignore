@@ -1,4 +1,5 @@
 # OS / editor
+/.mcp.json
 .DS_Store
 Thumbs.db
 Desktop.ini
@@ -100,10 +101,7 @@ xcuserdata/
 /.agent/
 /.agents/
 /.claude/
-/.codacy/*
-!/.codacy/codacy.config.json
-!/.codacy/codacy.yaml
-!/.codacy/codacy.yml
+/.codacy/
 /.codegraph/
 /.codex/
 /.cursor/
