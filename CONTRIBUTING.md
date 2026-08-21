@@ -20,9 +20,8 @@ python -m pip install -e '.[full,dev]'
 5. Update current documentation when flags, output, dependencies, or support limits change.
 6. Run the checks listed below.
 
-Do not add private, licensed, institutional, or identifying documents as fixtures.
-Synthetic fixtures belong under `tests/fixtures/`. Public fixture provenance and
-passwords must be recorded in the fixture README.
+Do not add private, licensed, institutional, or identifying documents. Tests
+must construct only the minimal synthetic data they need at runtime.
 
 ## Code guidelines
 
@@ -41,27 +40,10 @@ passwords must be recorded in the fixture README.
 ```bash
 ruff check src tests scripts examples
 pytest -q
-pytest -m e2e -q
-python scripts/capture_screenshots.py --check
 ```
 
-The suite is grouped by purpose:
-
-- `tests/unit/` contains isolated pure-component checks.
-- `tests/integration/` covers format handlers, the CLI, and the TUI together.
-- `tests/regression/` preserves safety, fidelity, and compatibility failures.
-- `tests/e2e/` invokes command entry points in subprocesses.
-- `tests/support/` contains shared builders and fixture paths.
-
-Run `python scripts/capture_screenshots.py` when user-visible CLI or TUI output
-changes, then review the changed captures.
-
-To exercise the sample workflow:
-
-```bash
-python examples/generate_samples.py
-bash examples/run_demos.sh
-```
+`tests/test_core.py` keeps the small direct safety contracts. Manually inspect
+terminal changes rather than committing generated captures.
 
 ## Pull requests
 

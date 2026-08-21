@@ -1,9 +1,0 @@
-Wrote: sheets_only_out.xlsx
-Format: excel_ooxml
-Removed worksheet protections: 1
-Removed workbook protections: 0
-Removed document protections: 0
-Removed modify verifiers: 0
-PDF permission strips: 0
-Signatures stripped: 0
-VBA unlocked: 0

@@ -14,7 +14,7 @@ Describe inputs, outputs, failure behavior, and safety constraints.
 
 ## Verification
 
-Describe the fixtures and tests that could establish correct behavior.
+Describe the synthetic data and tests that could establish correct behavior.
 
 The proposal must not require rights-management bypasses, signature
-impersonation, document exploits, or confidential fixtures.
+impersonation, document exploits, or confidential documents.

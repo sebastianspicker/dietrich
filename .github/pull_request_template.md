@@ -10,9 +10,7 @@ List the exact commands and results. Identify checks that were not run.
 
 - [ ] `ruff check src tests scripts examples`
 - [ ] `pytest -q`
-- [ ] `python scripts/capture_screenshots.py --check`
 - [ ] Current documentation reflects changed behavior
-- [ ] User-visible captures were refreshed when output changed
-- [ ] Fixtures contain no confidential or identifying material
+- [ ] No fixtures, generated captures, or confidential documents are included
 - [ ] Output collision, malformed input, and unsupported cases fail explicitly
 - [ ] Security and compatibility limits are stated

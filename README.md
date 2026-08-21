@@ -8,10 +8,8 @@ PDF. An optional Textual interface exposes the same operations in a terminal.
 Version 0.4.0a4 is an alpha release. Command behavior, Python APIs, and output
 formats may change before a stable release.
 
-![Dietrich terminal interface](docs/screenshots/werkbank-tui-smoke.svg)
-
 [Open the static interface demo](https://sebastianspicker.github.io/dietrich/).
-The demo uses sanitized fixture data, cannot access local files, and marks all
+The demo uses sanitized sample data, cannot access local files, and marks all
 command-capable actions as simulated.
 
 Run the same static artifact locally from the repository root:
@@ -191,15 +189,9 @@ result = unlock_document(Path("report.xlsx"), Path("report_editable.xlsx"))
 | `src/dietrich/signatures/` | OOXML signature stripping and experimental re-signing |
 | `src/dietrich/safety/` | Archive validation and output publication |
 | `src/dietrich/tui/` | Textual interface and packaged styles |
-| `tests/unit/` | Isolated component tests |
-| `tests/integration/` | Cross-component format, CLI, and TUI tests |
-| `tests/regression/` | Safety and compatibility regression tests |
-| `tests/e2e/` | Subprocess command-entry-point tests |
-| `tests/support/` | Shared fixture builders and process helpers |
-| `tests/fixtures/` | Tracked public Office fixtures and provenance |
-| `examples/` | Local sample-file builder and command walkthrough |
-| `scripts/` | Documentation capture script |
-| `docs/` | Capability, strategy, research, and capture references |
+| `tests/test_core.py` | Direct safety, parsing, legacy-format, and publication contracts |
+| `examples/` | User-facing command examples |
+| `docs/` | Capability, strategy, and research references |
 
 Focused references:
 
@@ -214,13 +206,6 @@ Keep format logic below `dispatch.py`; the CLI and TUI should translate user
 input into the same operation calls. Add focused tests for a changed format and a
 subprocess test when changing CLI behavior.
 
-Create local sample files and run the command walkthrough with:
-
-```bash
-python examples/generate_samples.py
-bash examples/run_demos.sh
-```
-
 See [CONTRIBUTING.md](CONTRIBUTING.md) for coding and review requirements.
 
 ## Testing
@@ -230,12 +215,10 @@ Run the repository checks from the project root:
 ```bash
 ruff check src tests scripts examples
 pytest -q
-pytest -m e2e -q
-python scripts/capture_screenshots.py --check
 ```
 
-CI installs `.[dev,full]` and runs Ruff, the complete pytest suite, and the
-capture check on Ubuntu with Python 3.11 through 3.13.
+CI installs `.[dev,full]` and runs Ruff and the direct pytest suite on Ubuntu
+with Python 3.11 through 3.13.
 
 ## Deployment and operation
 

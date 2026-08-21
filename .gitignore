@@ -1,4 +1,5 @@
 # OS / editor
+/.mcp.json
 .DS_Store
 Thumbs.db
 Desktop.ini
@@ -51,7 +52,6 @@ research/fuzz/corpus/
 
 # Local secrets / private workbooks (never publish)
 *.pem
-!tests/**/*.pem
 *.local.key
 *.p12
 *.pfx
@@ -61,9 +61,6 @@ private/
 local/
 *.local.xlsx
 *.local.docx
-docs/screenshots/_tmp*
-docs/screenshots/_demo*
-docs/screenshots/werkbank-visual-smoke.html
 /examples/out/
 examples/_work/
 
@@ -100,10 +97,7 @@ xcuserdata/
 /.agent/
 /.agents/
 /.claude/
-/.codacy/*
-!/.codacy/codacy.config.json
-!/.codacy/codacy.yaml
-!/.codacy/codacy.yml
+/.codacy/
 /.codegraph/
 /.codex/
 /.cursor/
@@ -121,3 +115,16 @@ xcuserdata/
 # Packaging
 *.whl
 *.tar.gz
+
+# Generated test and coverage output (local only)
+/coverage/
+/htmlcov/
+/.coverage
+/.coverage.*
+/.pytest_cache/
+/test-results/
+/playwright-report/
+/blob-report/
+/coverage.xml
+/junit.xml
+/junit-*.xml

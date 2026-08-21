@@ -11,7 +11,6 @@ installs `.[dev,full]` and runs:
 ```bash
 ruff check src tests scripts examples
 pytest -q --tb=short
-python scripts/capture_screenshots.py --check
 ```
 
 ## Distribution
@@ -27,6 +26,3 @@ Before publishing a release, a maintainer must separately verify:
 - intended Office and PDF viewer behavior on representative documents;
 - dependency and vulnerability status;
 - repository tag, artifact checksum, and publication provenance.
-
-The automated capture check validates file presence and basic content. It does
-not prove that every capture was refreshed during a release run.
