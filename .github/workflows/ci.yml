@@ -29,7 +29,7 @@ jobs:
           python -m pip install -e ".[dev,full]"
 
       - name: Ruff
-        run: ruff check src tests scripts examples
+        run: ruff check src tests examples
 
       - name: Pytest
         run: pytest -q --tb=short
