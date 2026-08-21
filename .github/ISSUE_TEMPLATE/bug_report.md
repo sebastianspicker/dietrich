@@ -23,7 +23,7 @@ python -c "import importlib.metadata as m; print(m.version('dietrich'))"
 ## Reproduction
 
 ```bash
-# Use commands and a synthetic or public fixture.
+# Use commands and minimal synthetic data where possible.
 ```
 
 Do not attach confidential documents, passwords, hashes, certificates, or private

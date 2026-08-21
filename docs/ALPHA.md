@@ -47,7 +47,6 @@ entries are rejected.
 
 ## Compatibility boundaries
 
-Tests use synthetic and public fixtures. They cover the format routes, CLI,
-Python API, and terminal state mapping. They do not cover all Office producers,
-all PDF security handlers, Microsoft Office trust dialogs, hardware-backed keys,
-or third-party viewers.
+The direct suite uses small synthetic byte streams to cover parsing and output
+safety. It does not cover all Office producers, PDF security handlers,
+Microsoft Office trust dialogs, hardware-backed keys, or third-party viewers.

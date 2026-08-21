@@ -21,4 +21,5 @@ files. Unknown protectors, producer-specific extensions, encryption, and record
 layouts outside the implemented patterns may remain unchanged. When no recognized
 record is found, the command emits a warning rather than claiming a modification.
 
-Tests use public non-confidential fixtures under `tests/fixtures/`.
+The direct suite builds only small synthetic byte streams; no legacy documents
+are tracked for testing.

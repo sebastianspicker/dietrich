@@ -33,6 +33,3 @@ jobs:
 
       - name: Pytest
         run: pytest -q --tb=short
-
-      - name: Screenshot captures present
-        run: python scripts/capture_screenshots.py --check

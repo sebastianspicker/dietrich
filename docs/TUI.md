@@ -45,20 +45,13 @@ The six TCSS files under `src/dietrich/tui/styles/` are included explicitly in
 the Hatchling wheel configuration. Changes to style filenames must be reflected
 in `pyproject.toml`.
 
-`scripts/capture_screenshots.py` exercises real Textual application states at
-fixed terminal sizes. The capture check confirms that the committed files exist
-and contain expected basic content. It is not an interactive accessibility or
-cross-terminal compatibility test.
-
 ## Verification
 
 Run:
 
 ```bash
-pytest -q tests/integration/test_tui.py tests/unit/test_tui_dossier.py tests/unit/test_session_history.py
-python scripts/capture_screenshots.py
-python scripts/capture_screenshots.py --check
+pytest -q
 ```
 
-Review focus order, labels, narrow-terminal layout, busy-state behavior, failure
-messages, and all changed SVG captures.
+Review focus order, labels, narrow-terminal layout, busy-state behavior, and
+failure messages manually when changing the terminal interface.

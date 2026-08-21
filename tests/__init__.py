@@ -1,1 +1,0 @@
-"""Dietrich test suite."""
