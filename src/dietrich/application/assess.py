@@ -68,48 +68,51 @@ def enforce_operation_blockers(inspection: DocumentInspection) -> None:
 
 def _capabilities_for(inspection: DocumentInspection) -> tuple[Capability, ...]:
     capabilities: dict[CapabilityCode, Capability] = {}
-
-    def add(code: CapabilityCode, layer: ProtectionLayer, detail: str) -> None:
-        capabilities.setdefault(code, Capability(code, layer, detail))
-
     for strategy in inspection.strategies:
-        if strategy.startswith("soft:"):
-            add(
-                CapabilityCode.REMOVE_SOFT_PROTECTION,
-                ProtectionLayer.SOFT,
-                "Create an editable copy with supported document flags removed.",
-            )
-        elif strategy.startswith("crypto:") and strategy != "crypto:export_hash":
-            add(
-                CapabilityCode.RECOVER_OPEN_PASSWORD,
-                ProtectionLayer.OPEN_ENCRYPTION,
-                "Verify or recover the document open password locally.",
-            )
-        elif strategy == "crypto:export_hash":
-            add(
-                CapabilityCode.EXPORT_PASSWORD_HASH,
-                ProtectionLayer.OPEN_ENCRYPTION,
-                "Export password-recovery material for a local external tool.",
-            )
-        elif strategy == "signature:strip":
-            add(
-                CapabilityCode.STRIP_SIGNATURES,
-                ProtectionLayer.SIGNATURE,
-                "Create an explicitly unsigned working copy.",
-            )
-        elif strategy == "vba:unlock":
-            add(
-                CapabilityCode.CLEAR_VBA_VERIFIER,
-                ProtectionLayer.VBA,
-                "Clear recognized VBA project password-verifier fields.",
-            )
+        capability = _capability_for_strategy(strategy)
+        if capability is not None:
+            capabilities.setdefault(capability.code, capability)
     if inspection.document_format == DocumentFormat.PDF:
-        add(
-            CapabilityCode.REMOVE_PDF_RESTRICTIONS,
-            ProtectionLayer.OWNER_PERMISSIONS,
-            "Create an unencrypted PDF working copy without owner restrictions.",
+        capability = Capability(
+            code=CapabilityCode.REMOVE_PDF_RESTRICTIONS,
+            layer=ProtectionLayer.OWNER_PERMISSIONS,
+            detail="Create an unencrypted PDF working copy without owner restrictions.",
         )
+        capabilities.setdefault(capability.code, capability)
     return tuple(capabilities.values())
+
+
+def _capability_for_strategy(strategy: str) -> Capability | None:
+    if strategy.startswith("soft:"):
+        return Capability(
+            CapabilityCode.REMOVE_SOFT_PROTECTION,
+            ProtectionLayer.SOFT,
+            "Create an editable copy with supported document flags removed.",
+        )
+    if strategy.startswith("crypto:") and strategy != "crypto:export_hash":
+        return Capability(
+            CapabilityCode.RECOVER_OPEN_PASSWORD,
+            ProtectionLayer.OPEN_ENCRYPTION,
+            "Verify or recover the document open password locally.",
+        )
+    special = {
+        "crypto:export_hash": Capability(
+            CapabilityCode.EXPORT_PASSWORD_HASH,
+            ProtectionLayer.OPEN_ENCRYPTION,
+            "Export password-recovery material for a local external tool.",
+        ),
+        "signature:strip": Capability(
+            CapabilityCode.STRIP_SIGNATURES,
+            ProtectionLayer.SIGNATURE,
+            "Create an explicitly unsigned working copy.",
+        ),
+        "vba:unlock": Capability(
+            CapabilityCode.CLEAR_VBA_VERIFIER,
+            ProtectionLayer.VBA,
+            "Clear recognized VBA project password-verifier fields.",
+        ),
+    }
+    return special.get(strategy)
 
 
 def _classify_path(path: Path) -> DocumentInspection:
@@ -172,46 +175,56 @@ def _classify_cfbf(path: Path) -> DocumentInspection:
 def _cfbf_container_summary(
     path: Path,
 ) -> tuple[DocumentFormat, bool, list[str], list[str], Blocker | None]:
-    strategies: list[str] = []
-    notes: list[str] = []
+    streams = _cfbf_stream_names(path)
+    if streams is not None:
+        return _cfbf_stream_summary(streams)
+    return _cfbf_prefix_summary(path)
+
+
+def _cfbf_stream_names(path: Path) -> set[str] | None:
     try:
         from dietrich.safety.cfb import list_stream_names
 
-        streams = list_stream_names(path)
+        return list_stream_names(path)
     except (ImportError, OSError, ValueError):
-        streams = None
-    if streams is not None:
-        if "EncryptionInfo" in streams or "EncryptedPackage" in streams:
-            strategies.extend(
-                ("crypto:ooxml_password", "crypto:wordlist", "crypto:mask", "crypto:export_hash")
-            )
-            return DocumentFormat.ENCRYPTED_OOXML, True, strategies, notes, None
-        short_names = {name.rsplit("/", 1)[-1] for name in streams}
-        if short_names & {"Workbook", "Book", "WordDocument"}:
-            strategies.append("soft:binary_protection")
-            notes.append("CFBF/OLE binary Office: verified soft-record rewriting available.")
-            return DocumentFormat.LEGACY_CFBF, False, strategies, notes, None
-        if "PowerPoint Document" in short_names:
-            detail = (
-                "Legacy PowerPoint is inspectable, but safe protection rewriting is unavailable "
-                "without a verified record parser."
-            )
-        else:
-            detail = "CFBF container is not a supported legacy Office document."
-        notes.append(detail)
-        return (
-            DocumentFormat.LEGACY_CFBF,
-            False,
-            strategies,
-            notes,
-            Blocker(BlockerCode.UNSUPPORTED_OPERATION, detail),
+        return None
+
+
+def _cfbf_stream_summary(
+    streams: set[str],
+) -> tuple[DocumentFormat, bool, list[str], list[str], Blocker | None]:
+    if "EncryptionInfo" in streams or "EncryptedPackage" in streams:
+        strategies = [
+            "crypto:ooxml_password",
+            "crypto:wordlist",
+            "crypto:mask",
+            "crypto:export_hash",
+        ]
+        return DocumentFormat.ENCRYPTED_OOXML, True, strategies, [], None
+    short_names = {name.rsplit("/", 1)[-1] for name in streams}
+    if short_names & {"Workbook", "Book", "WordDocument"}:
+        note = "CFBF/OLE binary Office: verified soft-record rewriting available."
+        return DocumentFormat.LEGACY_CFBF, False, ["soft:binary_protection"], [note], None
+    if "PowerPoint Document" in short_names:
+        detail = (
+            "Legacy PowerPoint is inspectable, but safe protection rewriting is unavailable "
+            "without a verified record parser."
         )
+    else:
+        detail = "CFBF container is not a supported legacy Office document."
+    blocker = Blocker(BlockerCode.UNSUPPORTED_OPERATION, detail)
+    return DocumentFormat.LEGACY_CFBF, False, [], [detail], blocker
+
+
+def _cfbf_prefix_summary(
+    path: Path,
+) -> tuple[DocumentFormat, bool, list[str], list[str], Blocker | None]:
     blob = read_file_prefix(path, 65_536)
     if b"EncryptionInfo" in blob or b"EncryptedPackage" in blob:
-        strategies.extend(("crypto:ooxml_password", "crypto:wordlist", "crypto:export_hash"))
-        return DocumentFormat.ENCRYPTED_OOXML, True, strategies, notes, None
-    notes.append("CFBF detected. Install dietrich[legacy] (olefile) for richer inspection.")
-    return DocumentFormat.LEGACY_CFBF, False, strategies, notes, None
+        strategies = ["crypto:ooxml_password", "crypto:wordlist", "crypto:export_hash"]
+        return DocumentFormat.ENCRYPTED_OOXML, True, strategies, [], None
+    note = "CFBF detected. Install dietrich[legacy] (olefile) for richer inspection."
+    return DocumentFormat.LEGACY_CFBF, False, [], [note], None
 
 
 def _cfbf_encryption_metadata(path: Path, encrypted: bool, notes: list[str], strategies: list[str]):

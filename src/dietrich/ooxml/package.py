@@ -151,36 +151,9 @@ def write_ooxml_candidate(
 
     stats = PartStats()
     warnings: list[str] = []
-    fmt = DocumentFormat.UNKNOWN
-    vba_present = False
 
     try:
-        with zipfile.ZipFile(source_path) as source_archive:
-            validate_archive_safety(source_archive, allow_signed=options.strip_signatures)
-            names = source_archive.namelist()
-            fmt = identify_ooxml_format(names)
-            if fmt == DocumentFormat.UNKNOWN:
-                raise InvalidDocumentError(
-                    f"{source_path} is a ZIP archive but not a supported OOXML document."
-                )
-            vba_present = any(p in names for p in VBA_PROJECT_PATHS)
-            transformers = _transformers_for(fmt)
-
-            skip_names, rewritten_parts = _signature_rewrites(
-                names, source_archive.read, options, stats, warnings
-            )
-
-            rewrite_context = ArchiveRewriteContext(
-                source=source_archive,
-                transformers=transformers,
-                skip_names=skip_names,
-                rewritten_parts=rewritten_parts,
-                options=options,
-                stats=stats,
-                warnings=warnings,
-            )
-            _write_transformed_archive(candidate, rewrite_context)
-
+        fmt, vba_present = _rewrite_ooxml_source(source_path, candidate, options, stats, warnings)
         _verify_candidate_package(candidate, options, fmt)
     except zipfile.BadZipFile as exc:
         raise InvalidDocumentError(
@@ -199,6 +172,38 @@ def write_ooxml_candidate(
         vba_project_present=vba_present,
         warnings=tuple(warnings),
     )
+
+
+def _rewrite_ooxml_source(
+    source_path: Path,
+    candidate: Path,
+    options: UnlockOptions,
+    stats: PartStats,
+    warnings: list[str],
+) -> tuple[DocumentFormat, bool]:
+    """Rewrite one validated source archive and return its identity metadata."""
+    with zipfile.ZipFile(source_path) as source_archive:
+        validate_archive_safety(source_archive, allow_signed=options.strip_signatures)
+        names = source_archive.namelist()
+        fmt = identify_ooxml_format(names)
+        if fmt == DocumentFormat.UNKNOWN:
+            raise InvalidDocumentError(
+                f"{source_path} is a ZIP archive but not a supported OOXML document."
+            )
+        skip_names, rewritten_parts = _signature_rewrites(
+            names, source_archive.read, options, stats, warnings
+        )
+        rewrite_context = ArchiveRewriteContext(
+            source=source_archive,
+            transformers=_transformers_for(fmt),
+            skip_names=skip_names,
+            rewritten_parts=rewritten_parts,
+            options=options,
+            stats=stats,
+            warnings=warnings,
+        )
+        _write_transformed_archive(candidate, rewrite_context)
+        return fmt, any(path in names for path in VBA_PROJECT_PATHS)
 
 
 def _verify_candidate_package(

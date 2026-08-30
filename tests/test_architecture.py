@@ -31,6 +31,57 @@ ALLOWED_DEPENDENCIES = {
     "types": {"domain"},
 }
 EXEMPT_ADAPTER_LAYERS = {"__init__", "__main__", "brand", "cli", "errors", "tui"}
+BANNED_OS_CALLS = {"link", "rename", "replace"}
+BANNED_PATH_CALLS = {"link_to", "rename", "replace"}
+
+
+class _PublicationReferences(ast.NodeVisitor):
+    """Collect the aliases and path variables needed by the publication rule."""
+
+    def __init__(self) -> None:
+        self.module_aliases: dict[str, str] = {}
+        self.function_aliases: set[str] = set()
+        self.path_aliases = {"Path"}
+        self.path_variables: set[str] = set()
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            if alias.name in {"os", "shutil"}:
+                self.module_aliases[alias.asname or alias.name] = alias.name
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.module in {"os", "shutil"}:
+            self._add_function_aliases(node.names)
+        elif node.module == "pathlib":
+            self._add_path_aliases(node.names)
+
+    def visit_arg(self, node: ast.arg) -> None:
+        if _annotation_name(node.annotation) in self.path_aliases:
+            self.path_variables.add(node.arg)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if isinstance(node.target, ast.Name) and (
+            _annotation_name(node.annotation) in self.path_aliases
+        ):
+            self.path_variables.add(node.target.id)
+        self.generic_visit(node)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        if _constructor_name(node.value) in self.path_aliases:
+            self.path_variables.update(
+                target.id for target in node.targets if isinstance(target, ast.Name)
+            )
+        self.generic_visit(node)
+
+    def _add_function_aliases(self, aliases: list[ast.alias]) -> None:
+        for alias in aliases:
+            if alias.name in BANNED_OS_CALLS | {"move"}:
+                self.function_aliases.add(alias.asname or alias.name)
+
+    def _add_path_aliases(self, aliases: list[ast.alias]) -> None:
+        for alias in aliases:
+            if alias.name == "Path":
+                self.path_aliases.add(alias.asname or alias.name)
 
 
 def _source_layer(path: Path) -> str:
@@ -42,14 +93,89 @@ def _dietrich_imports(path: Path) -> list[str]:
     modules: list[str] = []
     tree = ast.parse(path.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            modules.extend(alias.name for alias in node.names if alias.name.startswith("dietrich"))
-        elif isinstance(node, ast.ImportFrom):
-            if node.level:
-                modules.append("<relative import>")
-            elif node.module and node.module.startswith("dietrich"):
-                modules.append(node.module)
+        modules.extend(_imported_dietrich_modules(node))
     return modules
+
+
+def _imported_dietrich_modules(node: ast.AST) -> list[str]:
+    if isinstance(node, ast.Import):
+        return [alias.name for alias in node.names if alias.name.startswith("dietrich")]
+    if not isinstance(node, ast.ImportFrom):
+        return []
+    if node.level:
+        return ["<relative import>"]
+    if node.module and node.module.startswith("dietrich"):
+        return [node.module]
+    return []
+
+
+def _annotation_name(annotation: ast.expr | None) -> str | None:
+    return annotation.id if isinstance(annotation, ast.Name) else None
+
+
+def _constructor_name(expression: ast.expr) -> str | None:
+    if not isinstance(expression, ast.Call) or not isinstance(expression.func, ast.Name):
+        return None
+    return expression.func.id
+
+
+def _publication_violation(
+    call: ast.Call,
+    references: _PublicationReferences,
+) -> str | None:
+    if isinstance(call.func, ast.Name):
+        return call.func.id if call.func.id in references.function_aliases else None
+    if not isinstance(call.func, ast.Attribute):
+        return None
+    return _attribute_publication_violation(call.func, references)
+
+
+def _attribute_publication_violation(
+    attribute: ast.Attribute,
+    references: _PublicationReferences,
+) -> str | None:
+    module_violation = _module_publication_violation(attribute, references.module_aliases)
+    if module_violation is not None:
+        return module_violation
+    if _is_path_receiver(attribute.value, references) and attribute.attr in BANNED_PATH_CALLS:
+        return attribute.attr
+    return None
+
+
+def _module_publication_violation(
+    attribute: ast.Attribute,
+    module_aliases: dict[str, str],
+) -> str | None:
+    if not isinstance(attribute.value, ast.Name):
+        return None
+    module = module_aliases.get(attribute.value.id)
+    if module == "os" and attribute.attr in BANNED_OS_CALLS:
+        return attribute.attr
+    if module == "shutil" and attribute.attr == "move":
+        return attribute.attr
+    return None
+
+
+def _is_path_receiver(
+    receiver: ast.expr,
+    references: _PublicationReferences,
+) -> bool:
+    if isinstance(receiver, ast.Name):
+        return receiver.id in references.path_variables
+    return _constructor_name(receiver) in references.path_aliases
+
+
+def _publication_violations(path: Path) -> list[tuple[str, str]]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    references = _PublicationReferences()
+    references.visit(tree)
+    relative_path = path.relative_to(ROOT).as_posix()
+    return [
+        (relative_path, violation)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        if (violation := _publication_violation(node, references)) is not None
+    ]
 
 
 def _target_layer(module: str) -> str:
@@ -96,67 +222,10 @@ def test_only_publish_module_uses_final_publication_primitives() -> None:
     """Keep link/replace/rename publication primitives behind one module."""
     violations = []
     owner = SOURCE / "safety" / "publish.py"
-    banned_os_calls = {"link", "rename", "replace"}
     for path in SOURCE.rglob("*.py"):
         if path == owner:
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        module_aliases: dict[str, str] = {}
-        function_aliases: set[str] = set()
-        path_aliases = {"Path"}
-        path_variables: set[str] = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name in {"os", "shutil"}:
-                        module_aliases[alias.asname or alias.name] = alias.name
-            elif isinstance(node, ast.ImportFrom) and node.module in {"os", "shutil"}:
-                for alias in node.names:
-                    if alias.name in banned_os_calls | {"move"}:
-                        function_aliases.add(alias.asname or alias.name)
-            elif isinstance(node, ast.ImportFrom) and node.module == "pathlib":
-                for alias in node.names:
-                    if alias.name == "Path":
-                        path_aliases.add(alias.asname or alias.name)
-            elif isinstance(node, ast.arg) and isinstance(node.annotation, ast.Name):
-                if node.annotation.id in path_aliases:
-                    path_variables.add(node.arg)
-            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                if isinstance(node.annotation, ast.Name) and node.annotation.id in path_aliases:
-                    path_variables.add(node.target.id)
-            elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
-                if isinstance(node.value.func, ast.Name) and node.value.func.id in path_aliases:
-                    path_variables.update(
-                        target.id for target in node.targets if isinstance(target, ast.Name)
-                    )
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            violation = None
-            if isinstance(node.func, ast.Name) and node.func.id in function_aliases:
-                violation = node.func.id
-            elif isinstance(node.func, ast.Attribute):
-                receiver = node.func.value
-                if isinstance(receiver, ast.Name) and receiver.id in module_aliases:
-                    module = module_aliases[receiver.id]
-                    if (module == "os" and node.func.attr in banned_os_calls) or (
-                        module == "shutil" and node.func.attr == "move"
-                    ):
-                        violation = node.func.attr
-                is_path_receiver = isinstance(receiver, ast.Name) and receiver.id in path_variables
-                is_direct_path = (
-                    isinstance(receiver, ast.Call)
-                    and isinstance(receiver.func, ast.Name)
-                    and receiver.func.id in path_aliases
-                )
-                if (is_path_receiver or is_direct_path) and node.func.attr in {
-                    "link_to",
-                    "rename",
-                    "replace",
-                }:
-                    violation = node.func.attr
-            if violation is not None:
-                violations.append((path.relative_to(ROOT).as_posix(), violation))
+        violations.extend(_publication_violations(path))
     assert violations == []
 
 

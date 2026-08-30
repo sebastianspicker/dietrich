@@ -311,18 +311,19 @@ def test_owner_restricted_pdf_reports_one_permission_strip(tmp_path: Path) -> No
 
 def test_user_password_pdf_is_decrypted_with_explicit_password(tmp_path: Path) -> None:
     pikepdf = pytest.importorskip("pikepdf")
+    document_key = "viewer-passphrase"
     source = tmp_path / "password.pdf"
     with pikepdf.new() as pdf:
         pdf.add_blank_page()
         pdf.save(
             source,
-            encryption=pikepdf.Encryption(owner="owner-secret", user="user-secret", R=4),
+            encryption=pikepdf.Encryption(owner="editor-passphrase", user="viewer-passphrase", R=4),
         )
 
     output = tmp_path / "decrypted.pdf"
-    result = unlock_document(source, output, UnlockOptions(password="user-secret"))
+    result = unlock_document(source, output, UnlockOptions(password=document_key))
 
-    assert result.password_used == "user-secret"
+    assert result.password_used == document_key
     assert result.removed.pdf_permission_strips == 1
     with pikepdf.open(output) as pdf:
         assert not pdf.is_encrypted

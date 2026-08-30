@@ -86,20 +86,36 @@ def _reject_duplicate_names(names: list[str]) -> None:
 
 def _canonical_member_name(name: str) -> str:
     """Return a comparison form for one safe package-relative OPC part name."""
-    if not name or "\\" in name or "?" in name or "#" in name:
+    if _raw_member_name_is_unsafe(name):
         raise UnsafeArchiveError(f"archive member has an unsafe package name: {name!r}")
     decoded = unquote(name)
-    if decoded.startswith("/") or "\\" in decoded or PureWindowsPath(decoded).drive:
+    if _decoded_member_name_is_unsafe(decoded):
         raise UnsafeArchiveError(f"archive member has an unsafe package name: {name!r}")
-    if any(ord(character) < 32 or ord(character) == 127 for character in decoded):
+    if _has_control_characters(decoded):
         raise UnsafeArchiveError(f"archive member has control characters: {name!r}")
     normalized = decoded.rstrip("/")
     if not normalized:
         raise UnsafeArchiveError(f"archive member has an unsafe package name: {name!r}")
     parts = PurePosixPath(normalized).parts
-    if any(part in {"", ".", ".."} for part in parts):
+    if _has_path_traversal(parts):
         raise UnsafeArchiveError(f"archive member has path traversal: {name!r}")
     return "/".join(parts)
+
+
+def _raw_member_name_is_unsafe(name: str) -> bool:
+    return not name or "\\" in name or "?" in name or "#" in name
+
+
+def _decoded_member_name_is_unsafe(name: str) -> bool:
+    return name.startswith("/") or "\\" in name or bool(PureWindowsPath(name).drive)
+
+
+def _has_control_characters(name: str) -> bool:
+    return any(ord(character) < 32 or ord(character) == 127 for character in name)
+
+
+def _has_path_traversal(parts: tuple[str, ...]) -> bool:
+    return any(part in {"", ".", ".."} for part in parts)
 
 
 def _validate_member_limits(info: zipfile.ZipInfo) -> None:

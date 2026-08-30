@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import StrEnum, auto
 
 from dietrich.domain.models import ProtectionLayer
 
@@ -11,20 +11,20 @@ from dietrich.domain.models import ProtectionLayer
 class CapabilityCode(StrEnum):
     """Operations an assessed document can support."""
 
-    REMOVE_SOFT_PROTECTION = "remove_soft_protection"
-    REMOVE_PDF_RESTRICTIONS = "remove_pdf_restrictions"
-    RECOVER_OPEN_PASSWORD = "recover_open_password"
-    EXPORT_PASSWORD_HASH = "export_password_hash"
-    STRIP_SIGNATURES = "strip_signatures"
-    CLEAR_VBA_VERIFIER = "clear_vba_verifier"
+    REMOVE_SOFT_PROTECTION = auto()
+    REMOVE_PDF_RESTRICTIONS = auto()
+    RECOVER_OPEN_PASSWORD = auto()
+    EXPORT_PASSWORD_HASH = auto()
+    STRIP_SIGNATURES = auto()
+    CLEAR_VBA_VERIFIER = auto()
 
 
 class BlockerCode(StrEnum):
     """Reasons a requested transformation cannot proceed locally."""
 
     IRM = "rights_management"
-    UNKNOWN_FORMAT = "unknown_format"
-    UNSUPPORTED_OPERATION = "unsupported_operation"
+    UNKNOWN_FORMAT = auto()
+    UNSUPPORTED_OPERATION = auto()
 
 
 @dataclass(frozen=True)

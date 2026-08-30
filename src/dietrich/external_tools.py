@@ -87,7 +87,7 @@ async def run_hashcat_argv(
     """Run a validated hashcat command in a private working directory."""
     if len(argv) < 2 or str(argv[1]) != "-m":
         raise ValueError("hashcat argv must begin with an executable followed by '-m'")
-    process = await _create_process(argv, cwd=cwd)
+    process = await _create_hashcat_process(argv, cwd=cwd)
     return await capture_process(process, timeout=timeout)
 
 
@@ -107,7 +107,7 @@ async def run_pdf2john(
     """Run pdf2john against a fixed private filename rather than user input."""
     with tempfile.TemporaryDirectory(prefix="dietrich-pdf2john-") as directory:
         shutil.copyfile(source, Path(directory) / "input.pdf")
-        process = await _create_process((executable, "input.pdf"), cwd=directory)
+        process = await _create_pdf2john_process(executable, cwd=directory)
         return await capture_process(process, timeout=timeout)
 
 
@@ -118,11 +118,30 @@ def run_pdf2john_sync(
     return asyncio.run(run_pdf2john(executable, source, timeout=timeout))
 
 
-async def _create_process(
+async def _create_hashcat_process(
     argv: Sequence[str | PathLike[str]], *, cwd: str | PathLike[str] | None
 ) -> asyncio.subprocess.Process:
+    executable = str(argv[0])
+    arguments = tuple(str(argument) for argument in argv[2:])
     return await asyncio.create_subprocess_exec(
-        *(str(argument) for argument in argv),
+        executable,
+        "-m",
+        *arguments,
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=cwd,
+        env=_sanitized_environment(),
+        start_new_session=True,
+    )
+
+
+async def _create_pdf2john_process(
+    executable: str | PathLike[str], *, cwd: str | PathLike[str]
+) -> asyncio.subprocess.Process:
+    return await asyncio.create_subprocess_exec(
+        str(executable),
+        "input.pdf",
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,

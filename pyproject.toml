@@ -82,3 +82,7 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["B", "E", "F", "I", "UP"]
+
+[tool.bandit]
+# Assertions and synthetic passwords are test inputs, not production security controls.
+exclude_dirs = ["tests"]

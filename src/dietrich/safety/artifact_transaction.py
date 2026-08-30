@@ -31,7 +31,6 @@ class ArtifactTransaction:
         self._workspace = tempfile.TemporaryDirectory(
             prefix=f".{self.target.name}.work.", dir=self.target.parent
         )
-        os.chmod(self._workspace.name, 0o700)
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:
