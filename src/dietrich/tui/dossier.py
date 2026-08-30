@@ -1,18 +1,13 @@
-"""Protection Dossier view-model for the Werkbank Filing Bench TUI.
-
-Pure functions and dataclasses only - no Textual imports. The app layer maps
-:class:`DossierView` onto status-heading / status / status-meta widgets.
-"""
+"""View model for protection summaries in the terminal interface."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 
+from dietrich.domain.models import DocumentInspection, ProtectedPart, UnlockResult
 from dietrich.tui.copy import describe_removals, format_label
-from dietrich.types import DocumentInspection, ProtectedPart, UnlockResult
 
-# Diagnosis titles - exact Filing Bench wording.
 _TITLE_OPEN_PASSWORD = "Open password required"
 _TITLE_SIGNED = "Digitally signed package"
 _TITLE_OWNER = "PDF owner restrictions"
@@ -38,19 +33,6 @@ class DossierView:
     next_step: str
     metadata: str
     state: str
-
-
-def empty_dossier() -> DossierView:
-    """Ready state before any inspect - quiet intake prompt."""
-    return DossierView(
-        heading="READY TO INSPECT",
-        title="",
-        lede="Paste a document path, then Inspect.",
-        findings=(),
-        next_step="Open a local file, then Inspect.",
-        metadata="SIGNED  -\nIRM GATE  ACTIVE",
-        state="info",
-    )
 
 
 def error_dossier(heading: str, message: str) -> DossierView:
@@ -109,7 +91,6 @@ def from_unlock_result(result: UnlockResult) -> DossierView:
 
     findings = _removal_findings(result)
     if result.warnings:
-        # Surface first warnings as finding rows (keep compact).
         for warning in result.warnings[:2]:
             findings = (*findings, ("Warning", warning, "warn"))
 
@@ -144,9 +125,6 @@ def format_dossier_body(view: DossierView) -> list[str]:
     if view.next_step:
         lines.append(f"Next · {view.next_step}")
     return lines[:12]
-
-
-# --- internals --------------------------------------------------------------
 
 
 def _diagnose(inspection: DocumentInspection) -> tuple[str, str, str]:
@@ -186,7 +164,6 @@ def _inspection_findings(
     """Finding rows for the dossier grid (label, value, tone)."""
     rows: list[tuple[str, str, str]] = []
 
-    # Soft hits
     if inspection.soft_protections:
         rows.append(("Soft hits", _soft_hits_value(inspection.soft_protections), "warn"))
     else:
@@ -194,15 +171,12 @@ def _inspection_findings(
 
     rows.extend(_password_findings(inspection))
 
-    # Signed
     rows.append(
         ("Signed", "Yes" if inspection.signed else "No", "warn" if inspection.signed else "ok")
     )
 
-    # IRM - pure path does not call detect_irm; note-driven or default.
-    rows.append(_irm_finding(inspection.notes))
+    rows.append(_irm_finding(inspection.irm_kind))
 
-    # Format (short)
     rows.append(("Format", format_label(inspection.document_format), "neutral"))
 
     rows.extend(_optional_findings(inspection))
@@ -236,15 +210,10 @@ def _optional_findings(inspection: DocumentInspection) -> list[tuple[str, str, s
     return rows
 
 
-def _irm_finding(notes: tuple[str, ...]) -> tuple[str, str, str]:
-    """IRM / Purview row without calling detect_irm.
-
-    Default: "None detected" (gate still shown in metadata as ACTIVE).
-    Notes that mention IRM/Purview/RMS surface as "Flagged".
-    """
-    joined = " ".join(notes).lower()
-    if any(token in joined for token in ("irm", "purview", "rms", "rights management")):
-        return ("IRM / Purview", "Flagged", "signal")
+def _irm_finding(irm_kind: str | None) -> tuple[str, str, str]:
+    """Render the typed rights-management assessment result."""
+    if irm_kind:
+        return ("IRM / Purview", f"Flagged ({irm_kind})", "signal")
     return ("IRM / Purview", "None detected", "ok")
 
 

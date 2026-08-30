@@ -1,7 +1,7 @@
 """Command-line interface for Dietrich.
 
-Parses flags into :class:`~dietrich.types.UnlockOptions` and routes through
-:mod:`dietrich.dispatch`. Terminal UI: ``dietrich --tui``.
+Parses flags into the public operation model and routes through the stable
+application facade. Terminal UI: ``dietrich --tui``.
 """
 
 from __future__ import annotations
@@ -19,13 +19,13 @@ from dietrich.dispatch import (
     inspect_document,
     unlock_document,
 )
+from dietrich.domain.models import DocumentInspection, UnlockOptions, UnlockResult
 from dietrich.errors import (
     DietrichError,
     MissingDependencyError,
     OutputExistsError,
     PasswordNotFoundError,
 )
-from dietrich.types import DocumentInspection, UnlockOptions, UnlockResult
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -220,13 +220,13 @@ def _add_recovery_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--brute",
         action="store_true",
-        help="Enable brute force (requires --charset/--max-length; default digits len<=4)",
+        help="Try a bounded character-set search (default: digits up to length 4)",
     )
     parser.add_argument(
         "--charset",
         help="Charset name for brute: digits, lower, upper, alpha, alnum, printable",
     )
-    parser.add_argument("--max-length", type=int, help="Max brute length")
+    parser.add_argument("--max-length", type=int, help="Maximum brute-force password length")
     parser.add_argument(
         "--max-candidates",
         type=int,
@@ -237,12 +237,12 @@ def _add_recovery_arguments(parser: argparse.ArgumentParser) -> None:
         "--workers",
         type=int,
         default=1,
-        help="Parallel password-verify workers for wordlist/mask/brute (default 1)",
+        help="Concurrent password-verification workers (default 1)",
     )
     parser.add_argument(
         "--hashcat",
         action="store_true",
-        help="External hashcat GPU recovery (needs --wordlist, --mask, or --hashcat-arg)",
+        help="Run local hashcat recovery (needs --wordlist, --mask, or --hashcat-arg)",
     )
     parser.add_argument(
         "--hashcat-arg",
@@ -268,17 +268,17 @@ def _add_advanced_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--resign-key",
         metavar="PEM",
-        help="Private key PEM for --resign-cert (honest re-sign only)",
+        help="Unencrypted RSA private key for --resign-cert (PEM)",
     )
     parser.add_argument(
         "--export-hash",
         choices=("hashcat", "john"),
-        help="Export a hash line for external GPU tools and exit",
+        help="Export a hash line for an external recovery tool and exit",
     )
     parser.add_argument(
         "--strip-signatures",
         action="store_true",
-        help="Strip OOXML digital signatures (unsigned working copy; loud warning)",
+        help="Remove OOXML digital signatures and create an unsigned working copy",
     )
     parser.add_argument(
         "--vba",
@@ -319,7 +319,7 @@ def _print_inspection(inspection: DocumentInspection) -> None:
     print(f"Owner restrictions: {inspection.owner_restrictions}")
     print(f"VBA project: {'present' if inspection.vba_project_present else 'absent'}")
     _print_encryption_details(inspection)
-    _print_irm_status(inspection.input_path)
+    _print_irm_status(inspection)
     _print_inspection_collections(inspection)
 
 
@@ -334,15 +334,10 @@ def _print_encryption_details(inspection: DocumentInspection) -> None:
             print(f"Hashcat mode: {inspection.hashcat_mode}")
 
 
-def _print_irm_status(path: Path) -> None:
-    """Print the best-effort rights-management probe result."""
-    try:
-        from dietrich.crypto.irm import detect_irm
-
-        irm = detect_irm(path)
-        print(f"IRM/RMS: {'yes (' + irm.kind + ')' if irm.is_irm else 'no'}")
-    except (AttributeError, OSError, TypeError, ValueError):
-        print("IRM/RMS: unknown")
+def _print_irm_status(inspection: DocumentInspection) -> None:
+    """Print the rights-management result already captured by assessment."""
+    value = f"yes ({inspection.irm_kind})" if inspection.irm_kind else "no"
+    print(f"IRM/RMS: {value}")
 
 
 def _print_inspection_collections(inspection: DocumentInspection) -> None:

@@ -13,7 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dietrich.errors import EncryptedDocumentError, MissingDependencyError, PasswordNotFoundError
-from dietrich.process import ProcessResult, run_hashcat_argv_sync
+from dietrich.external_tools import (
+    ProcessOutputLimitError,
+    ProcessResult,
+    run_hashcat_argv_sync,
+)
 
 
 @dataclass(frozen=True)
@@ -69,7 +73,7 @@ def normalize_hash_body(hash_line: str) -> str:
     return body.strip()
 
 
-def run_hashcat_for_office(
+def run_hashcat(
     hash_line: str,
     *,
     mode: int,
@@ -80,7 +84,7 @@ def run_hashcat_for_office(
     potfile: Path | None = None,
     timeout: int | None = None,
 ) -> HashcatRunResult:
-    """Run hashcat against a single Office/PDF hash line; return cracked password if any.
+    """Run hashcat against one Office/PDF hash line and return the result.
 
     Attack modes:
     - wordlist → ``-a 0`` + wordlist path
@@ -103,7 +107,7 @@ def run_hashcat_for_office(
         body = normalize_hash_body(hash_line)
         files = _prepare_hashcat_files(workspace, body, potfile)
         command = _hashcat_command(hashcat, options, files)
-        process = _run_hashcat(command, options.timeout)
+        process = _run_hashcat(command, options.timeout, workspace)
         return _hashcat_result(process, command, files, body, options.mode)
 
 
@@ -131,6 +135,7 @@ def _hashcat_command(hashcat: str, options: _HashcatOptions, files: _HashcatFile
     """Build a shell-free hashcat argv for a dictionary or mask attack."""
     if options.wordlist is not None and options.mask:
         raise EncryptedDocumentError("pass either --wordlist or --mask with --hashcat, not both")
+    _validate_extra_args(options.extra_args)
     command = _hashcat_base_command(hashcat, options, files)
     if options.mask:
         command.append(options.mask)
@@ -138,6 +143,29 @@ def _hashcat_command(hashcat: str, options: _HashcatOptions, files: _HashcatFile
         command.append(_wordlist_path(options.wordlist))
     command.extend(options.extra_args)
     return command
+
+
+def _validate_extra_args(arguments: tuple[str, ...]) -> None:
+    """Prevent operator arguments from replacing Dietrich's private file controls."""
+    controlled = {
+        "-m",
+        "--hash-type",
+        "-a",
+        "--attack-mode",
+        "-o",
+        "--outfile",
+        "--outfile-format",
+        "--potfile-path",
+        "--session",
+        "--restore",
+        "--restore-file-path",
+    }
+    for argument in arguments:
+        option = argument.split("=", maxsplit=1)[0]
+        if option in controlled:
+            raise EncryptedDocumentError(
+                f"--hashcat-arg may not override Dietrich-managed option {option}"
+            )
 
 
 def _hashcat_base_command(
@@ -172,14 +200,16 @@ def _wordlist_path(wordlist: Path) -> str:
     return str(path)
 
 
-def _run_hashcat(command: list[str], timeout: int | None) -> ProcessResult:
+def _run_hashcat(command: list[str], timeout: int | None, workspace: Path) -> ProcessResult:
     """Run controlled hashcat argv and translate launch failures."""
     try:
-        return run_hashcat_argv_sync(command, timeout=timeout)
+        return run_hashcat_argv_sync(command, timeout=timeout, cwd=workspace)
     except TimeoutError as exc:
         raise PasswordNotFoundError(
             f"hashcat timed out after {timeout}s without finding a password"
         ) from exc
+    except ProcessOutputLimitError as exc:
+        raise EncryptedDocumentError("hashcat exceeded Dietrich's captured-output limit") from exc
     except OSError as exc:
         raise MissingDependencyError(f"failed to execute hashcat: {exc}") from exc
 

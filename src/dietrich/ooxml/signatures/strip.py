@@ -1,4 +1,4 @@
-"""Remove OOXML digital signature parts and related content types/relationships."""
+"""Remove OOXML signature parts and their content types and relationships."""
 
 from __future__ import annotations
 
@@ -70,7 +70,6 @@ def _mentions_signature(data: bytes) -> bool:
 
 
 def _strip_content_types(source: bytes, skip: set[str]) -> bytes:
-    """Internal helper: _strip_content_types."""
     try:
         root = ElementTree.fromstring(source)
     except (DefusedXmlException, ElementTree.ParseError):
@@ -110,7 +109,6 @@ def _attribute_ending_in(attributes: dict[str, str], name: str) -> str | None:
 
 
 def _strip_relationships(source: bytes) -> bytes:
-    """Internal helper: _strip_relationships."""
     try:
         root = ElementTree.fromstring(source)
     except (DefusedXmlException, ElementTree.ParseError):

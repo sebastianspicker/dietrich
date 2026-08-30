@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import zipfile
+from pathlib import PurePosixPath, PureWindowsPath
+from urllib.parse import unquote
 
 from dietrich.errors import EncryptedDocumentError, SignedDocumentError, UnsafeArchiveError
 
@@ -76,9 +78,44 @@ def validate_archive_safety(
 
 
 def _reject_duplicate_names(names: list[str]) -> None:
-    """Reject duplicate ZIP member names."""
-    if len(names) != len(set(names)):
-        raise UnsafeArchiveError("archive contains duplicate member names.")
+    """Reject unsafe or duplicate names after OPC URI normalization."""
+    canonical = [_canonical_member_name(name) for name in names]
+    if len(canonical) != len(set(canonical)):
+        raise UnsafeArchiveError("archive contains duplicate or aliased member names.")
+
+
+def _canonical_member_name(name: str) -> str:
+    """Return a comparison form for one safe package-relative OPC part name."""
+    if _raw_member_name_is_unsafe(name):
+        raise UnsafeArchiveError(f"archive member has an unsafe package name: {name!r}")
+    decoded = unquote(name)
+    if _decoded_member_name_is_unsafe(decoded):
+        raise UnsafeArchiveError(f"archive member has an unsafe package name: {name!r}")
+    if _has_control_characters(decoded):
+        raise UnsafeArchiveError(f"archive member has control characters: {name!r}")
+    normalized = decoded.rstrip("/")
+    if not normalized:
+        raise UnsafeArchiveError(f"archive member has an unsafe package name: {name!r}")
+    parts = PurePosixPath(normalized).parts
+    if _has_path_traversal(parts):
+        raise UnsafeArchiveError(f"archive member has path traversal: {name!r}")
+    return "/".join(parts)
+
+
+def _raw_member_name_is_unsafe(name: str) -> bool:
+    return not name or "\\" in name or "?" in name or "#" in name
+
+
+def _decoded_member_name_is_unsafe(name: str) -> bool:
+    return name.startswith("/") or "\\" in name or bool(PureWindowsPath(name).drive)
+
+
+def _has_control_characters(name: str) -> bool:
+    return any(ord(character) < 32 or ord(character) == 127 for character in name)
+
+
+def _has_path_traversal(parts: tuple[str, ...]) -> bool:
+    return any(part in {"", ".", ".."} for part in parts)
 
 
 def _validate_member_limits(info: zipfile.ZipInfo) -> None:

@@ -1,5 +1,5 @@
-"""Crypto detection, attack, and decrypt helpers."""
+"""Password candidate generation and external recovery-tool integration."""
 
-from dietrich.crypto.detect import classify_path
+from dietrich.crypto.attack import run_file_attack
 
-__all__ = ["classify_path"]
+__all__ = ["run_file_attack"]

@@ -12,18 +12,7 @@ from dietrich.dispatch import (
     unlock_document,
     unlock_workbook,
 )
-from dietrich.errors import (
-    DietrichError,
-    EncryptedDocumentError,
-    InvalidDocumentError,
-    MissingDependencyError,
-    OutputExistsError,
-    PasswordNotFoundError,
-    SignedDocumentError,
-    UnsafeArchiveError,
-    UnsupportedFormatError,
-)
-from dietrich.types import (
+from dietrich.domain.models import (
     AttackOptions,
     AttackResult,
     DocumentFormat,
@@ -34,6 +23,17 @@ from dietrich.types import (
     UnlockOptions,
     UnlockResult,
     WorkbookInspection,
+)
+from dietrich.errors import (
+    DietrichError,
+    EncryptedDocumentError,
+    InvalidDocumentError,
+    MissingDependencyError,
+    OutputExistsError,
+    PasswordNotFoundError,
+    SignedDocumentError,
+    UnsafeArchiveError,
+    UnsupportedFormatError,
 )
 
 __all__ = [
@@ -63,4 +63,4 @@ __all__ = [
     "unlock_workbook",
 ]
 
-__version__ = "0.4.0a4"
+__version__ = "0.4.0a5"

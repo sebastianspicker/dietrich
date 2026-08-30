@@ -1,4 +1,4 @@
-"""Werkbank Textual theme for the Dietrich TUI."""
+"""Textual theme registration for the Dietrich terminal interface."""
 
 from __future__ import annotations
 
@@ -15,6 +15,6 @@ DIETRICH_THEME = Theme(**WERKBANK_THEME_KWARGS)
 
 
 def register_dietrich_theme(app: App) -> str:
-    """Register the Werkbank theme on app and return its name."""
+    """Register the Dietrich theme and return its name."""
     app.register_theme(DIETRICH_THEME)
     return THEME_NAME

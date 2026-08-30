@@ -1,6 +1,6 @@
-"""Safety helpers for archive processing and atomic publish."""
+"""Bounded document-container validation helpers."""
 
-from dietrich.safety.publish import publish_output
+from dietrich.safety.cfb import CFBF_MAGIC, validate_cfb
 from dietrich.safety.zip_archive import (
     MAX_ARCHIVE_MEMBERS,
     MAX_COMPRESSION_RATIO,
@@ -18,8 +18,9 @@ __all__ = [
     "MAX_MEMBER_UNCOMPRESSED_BYTES",
     "MAX_TOTAL_UNCOMPRESSED_BYTES",
     "SIGNED_PACKAGE_PREFIX",
+    "CFBF_MAGIC",
     "is_signed_package_member",
     "package_is_signed",
-    "publish_output",
+    "validate_cfb",
     "validate_archive_safety",
 ]

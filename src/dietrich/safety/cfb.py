@@ -12,17 +12,26 @@ from typing import Any
 
 CFBF_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 
+# CFBF directory metadata is attacker-controlled.  These limits are applied
+# before loading the compound file or any stream into memory.
+MAX_CFB_INPUT_BYTES = 512 * 1024 * 1024
+MAX_CFB_STREAMS = 10_000
+MAX_CFB_STREAM_BYTES = 128 * 1024 * 1024
+MAX_CFB_TOTAL_STREAM_BYTES = 256 * 1024 * 1024
+
 
 def read_streams(path: Path) -> dict[str, bytes]:
     """Return {stream_path: data} for all streams in an OLE file."""
     import olefile
 
     path = Path(path)
+    _require_input_size(path)
     streams: dict[str, bytes] = {}
     with olefile.OleFileIO(str(path)) as ole:
-        for entry in ole.listdir(streams=True, storages=False):
+        entries = _bounded_stream_entries(ole)
+        for entry in entries:
             name = "/".join(entry)
-            streams[name] = ole.openstream(entry).read()
+            streams[name] = _read_stream_limited(ole, entry)
     return streams
 
 
@@ -36,10 +45,64 @@ def validate_cfb(path: Path) -> None:
     import olefile
 
     path = Path(path)
+    _require_input_size(path)
     if not olefile.isOleFile(str(path)):
         raise ValueError(f"{path} is not an OLE/CFB file")
     with olefile.OleFileIO(str(path)) as ole:
-        ole.listdir(streams=True, storages=False)
+        _bounded_stream_entries(ole)
+
+
+def list_stream_names(path: Path) -> set[str]:
+    """Return bounded CFB stream names without reading stream contents."""
+    import olefile
+
+    path = Path(path)
+    _require_input_size(path)
+    if not olefile.isOleFile(str(path)):
+        raise ValueError(f"{path} is not an OLE/CFB file")
+    with olefile.OleFileIO(str(path)) as ole:
+        return {"/".join(entry) for entry in _bounded_stream_entries(ole)}
+
+
+def _require_input_size(path: Path) -> None:
+    """Reject compound files before an OLE parser can load oversized inputs."""
+    size = path.stat().st_size
+    if size > MAX_CFB_INPUT_BYTES:
+        raise ValueError(f"CFB input exceeds the {MAX_CFB_INPUT_BYTES}-byte processing limit")
+
+
+def _bounded_stream_entries(ole) -> list[list[str]]:
+    """Validate stream count and declared sizes before any stream reads."""
+    entries = ole.listdir(streams=True, storages=False)
+    if len(entries) > MAX_CFB_STREAMS:
+        raise ValueError(f"CFB contains more than {MAX_CFB_STREAMS} streams")
+    total = 0
+    for entry in entries:
+        size = int(ole.get_size(entry))
+        if size > MAX_CFB_STREAM_BYTES:
+            raise ValueError(
+                f"CFB stream {'/'.join(entry)!r} exceeds the "
+                f"{MAX_CFB_STREAM_BYTES}-byte processing limit"
+            )
+        total += size
+        if total > MAX_CFB_TOTAL_STREAM_BYTES:
+            raise ValueError(
+                "CFB aggregate stream size exceeds the "
+                f"{MAX_CFB_TOTAL_STREAM_BYTES}-byte processing limit"
+            )
+    return entries
+
+
+def _read_stream_limited(ole, entry) -> bytes:
+    """Read one metadata-bounded stream and reject size inconsistencies."""
+    expected_size = int(ole.get_size(entry))
+    if expected_size > MAX_CFB_STREAM_BYTES:
+        raise ValueError("CFB stream exceeds the processing limit")
+    stream = ole.openstream(entry)
+    data = stream.read(expected_size + 1)
+    if len(data) != expected_size:
+        raise ValueError(f"CFB stream {'/'.join(entry)!r} has an invalid declared size")
+    return data
 
 
 @dataclass
@@ -75,7 +138,12 @@ def patch_streams(path: Path, output_path: Path, patches: dict[str, bytes]) -> l
 
     path = Path(path)
     output_path = Path(output_path)
-    data = bytearray(path.read_bytes())
+    _require_input_size(path)
+    validate_cfb(path)
+    with path.open("rb", buffering=0) as source:
+        data = bytearray(source.read(MAX_CFB_INPUT_BYTES + 1))
+    if len(data) > MAX_CFB_INPUT_BYTES:
+        raise ValueError("CFB input exceeds the processing limit")
 
     with olefile.OleFileIO(str(path)) as ole:
         applied: list[str] = []
@@ -118,7 +186,7 @@ def _flush_mini_stream(ole, data: bytearray, sector_size: int, mini_stream: byte
 
 def _patch_entry(context: _PatchContext, entry_path: Any, name: str, new_bytes: bytes) -> None:
     """Patch one resolved stream using the shared patch context."""
-    old = context.ole.openstream(entry_path).read()
+    old = _read_stream_limited(context.ole, entry_path)
     if len(new_bytes) != len(old):
         raise ValueError(
             f"stream {name!r} length changed {len(old)} -> {len(new_bytes)}; "
@@ -149,7 +217,6 @@ def _resolve_entry(ole, name: str):
 
 
 def _dirent_for(ole, entry_path):
-    """Internal helper: _dirent_for."""
     if isinstance(entry_path, list | tuple):
         short = entry_path[-1]
     else:
@@ -166,7 +233,6 @@ def _poke_file_chain(
     sector_size: int,
     new_bytes: bytes,
 ) -> None:
-    """Internal helper: _poke_file_chain."""
     offset = 0
     remaining = len(new_bytes)
     for sect in chain:
@@ -191,7 +257,6 @@ def _poke_chain(
     sector_size: int,
     new_bytes: bytes,
 ) -> None:
-    """Internal helper: _poke_chain."""
     offset = 0
     remaining = len(new_bytes)
     for sect in chain:
@@ -200,7 +265,6 @@ def _poke_chain(
         off = sect * sector_size
         chunk = min(sector_size, remaining)
         if off + chunk > len(buf):
-            # extend mini stream buffer if needed
             buf.extend(b"\x00" * (off + chunk - len(buf)))
         buf[off : off + chunk] = new_bytes[offset : offset + chunk]
         offset += chunk
@@ -212,8 +276,9 @@ def _poke_chain(
 
 
 def _read_root_stream(ole, data: bytearray, sector_size: int) -> bytes:
-    """Internal helper: _read_root_stream."""
     root = ole.direntries[0]
+    if root.size > MAX_CFB_STREAM_BYTES:
+        raise ValueError("CFB mini stream exceeds the processing limit")
     if hasattr(root, "build_sect_chain"):
         root.build_sect_chain(ole)
     chain = list(root.sect_chain or [])

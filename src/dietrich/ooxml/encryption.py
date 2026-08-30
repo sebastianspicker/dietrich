@@ -1,4 +1,4 @@
-"""Office open-password verify/decrypt and hash export via msoffcrypto.
+"""OOXML open-password verify/decrypt and hash export via msoffcrypto.
 
 Handles Agile/Standard encryption: password verify (no full decrypt per try),
 decrypt-to-path, and office2john-compatible ``$office$*`` hash lines.
@@ -369,7 +369,10 @@ def _export_standard_hash_from_ole(path: Path) -> str:
     """Parse ECMA-376 Standard / Office 2007 EncryptionInfo (office2john layout)."""
     import olefile
 
+    from dietrich.safety.cfb import validate_cfb
+
     path = Path(path)
+    validate_cfb(path)
     if not olefile.isOleFile(str(path)):
         raise EncryptedDocumentError(
             f"{path.name}: not an OLE compound file; cannot export standard hash"

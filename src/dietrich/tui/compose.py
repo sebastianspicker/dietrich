@@ -1,8 +1,4 @@
-"""Pure compose helpers for DietrichApp widget tree (Filing Bench layout).
-
-App should call: ``yield from compose_app(self._initial_path)``.
-No action handlers live here - only the widget tree and static chrome text.
-"""
+"""Widget composition helpers for the Dietrich terminal interface."""
 
 from __future__ import annotations
 
@@ -164,10 +160,9 @@ def compose_key_footer() -> ComposeResult:
 
 
 def compose_app(initial_path: str = "") -> ComposeResult:
-    """Yield the full Filing Bench widget tree for DietrichApp.compose()."""
+    """Yield the complete widget tree for ``DietrichApp.compose``."""
     yield from compose_chrome()
     with Horizontal(id="workbench"):
-        # Session rail LEFT (mockup: session drawer then main).
         yield from compose_session_rail()
         yield from compose_main_column(initial_path)
     yield from compose_key_footer()

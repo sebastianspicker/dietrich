@@ -1,8 +1,4 @@
-"""Terminal UI (Textual) for Dietrich - Werkbank Filing Bench.
-
-Modules: compose · dossier · session_history · options_map · theme ·
-styles/*.tcss · app shell.
-"""
+"""Optional Textual terminal interface for Dietrich."""
 
 from __future__ import annotations
 
@@ -30,6 +26,10 @@ def run_tui(initial_path: str | Path | None = None) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Entry for ``dietrich-tui`` / ``python -m dietrich.tui``."""
     args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] in {"-h", "--help"}:
+        print("usage: dietrich-tui [INPUT]")
+        print("Launch the optional Textual interface, optionally with an initial document path.")
+        return 0
     initial = args[0] if args else None
     try:
         return run_tui(initial_path=initial)

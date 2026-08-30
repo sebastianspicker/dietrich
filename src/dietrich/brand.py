@@ -1,33 +1,24 @@
-"""Canonical Dietrich brand strings and Werkbank color tokens.
-
-Import-safe for the zero-dependency CLI core - no Textual/Rich imports.
-TUI theming builds on these constants in :mod:`dietrich.tui.theme`.
-"""
+"""Shared product strings and terminal-interface color tokens."""
 
 from __future__ import annotations
 
 from typing import TypedDict
 
-# --- Product identity -------------------------------------------------------
-
 PRODUCT_NAME = "Dietrich"
 TAGLINE = "the office picklock"
 SUBTITLE = f"{TAGLINE} - authorized use only"
 HELP_DESCRIPTION = (
-    "Dietrich - the office picklock. Remove soft protection and recover open "
-    "passwords from Office and PDF documents you own or are authorized to modify. "
-    "(German: Dietrich = picklock; also a classic first name.)"
+    "Inspect document protection, remove soft protection, and recover open passwords "
+    "from authorized Office and PDF documents."
 )
 AUTHORIZED_PLAQUE = (
     "AUTHORIZED USE ONLY · Documents you own or may modify · "
     "Soft locks ≠ encryption · IRM / Purview requires a valid license"
 )
 HELP_EPILOG = (
-    "Authorized use only - unlock documents you own or may modify. "
-    "Soft locks are not encryption; IRM/Purview cannot be removed without a license."
+    "Use only on documents you own or may modify. IRM/Purview-protected documents "
+    "require a valid license and are not modified."
 )
-
-# Interface palette shared with the packaged Textual styles.
 
 NIGHT_SLATE = "#12161C"  # canvas / background
 BENCH_IRON = "#1B222C"  # surface / panel
@@ -43,13 +34,9 @@ SEAL_RED = "#B54A4A"  # error
 COOL_LEDGER = "#E8ECF1"  # light canvas (docs optional)
 CARBON = "#1A1F27"  # light ink (docs optional)
 
-# Theme name registered with Textual App.
 THEME_NAME = "dietrich"
 
 
-# Kwargs for textual.theme.Theme - brand.py stays free of Textual imports.
-# Palette role Action (brass) → primary; Signal (stamp blue) → secondary+accent.
-# Never map Textual accent to brass.
 class WerkbankThemeKwargs(TypedDict):
     """Precisely typed arguments shared with Textual's Theme constructor."""
 

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from dietrich.domain.models import ProtectedPart, UnlockOptions
+from dietrich.ooxml.stats import PartStats
 from dietrich.ooxml.xml_strip import count_elements, remove_elements_from_xml_bytes
-from dietrich.types import PartStats, ProtectedPart, UnlockOptions
 
 SETTINGS_PATH = "word/settings.xml"
 

@@ -49,12 +49,9 @@ def detect_irm(path: Path) -> IrmInfo:
 def _probe_ole_irm(path: Path, details: list[str]) -> IrmInfo | None:
     """Probe OLE streams while retaining best-effort IRM diagnostics."""
     try:
-        import olefile
+        from dietrich.safety.cfb import list_stream_names
 
-        if not olefile.isOleFile(str(path)):
-            return None
-        with olefile.OleFileIO(str(path)) as ole:
-            streams = {"/".join(stream) for stream in ole.listdir()}
+        streams = list_stream_names(path)
     except (AttributeError, ImportError, OSError, TypeError, ValueError) as exc:
         details.append(f"IRM probe limited: {exc}")
         return None

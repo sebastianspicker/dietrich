@@ -8,8 +8,10 @@ List the exact commands and results. Identify checks that were not run.
 
 ## Checklist
 
-- [ ] `ruff check src tests scripts examples`
-- [ ] `pytest -q`
+- [ ] `uv run ruff check src tests examples`
+- [ ] `uv run ruff format --check src tests examples`
+- [ ] `uv run pyright`
+- [ ] `uv run pytest -q`
 - [ ] Current documentation reflects changed behavior
 - [ ] No fixtures, generated captures, or confidential documents are included
 - [ ] Output collision, malformed input, and unsupported cases fail explicitly

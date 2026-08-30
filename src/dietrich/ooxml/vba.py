@@ -41,7 +41,6 @@ def _try_unlock_ole_vba(data: bytes) -> tuple[bytes, int] | None:
 
 
 def _unlock_ole_vba(data: bytes, olefile) -> tuple[bytes, int]:
-    """Internal helper: _unlock_ole_vba."""
     import io
 
     bio = io.BytesIO(data)
