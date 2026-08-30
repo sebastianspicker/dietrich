@@ -1,4 +1,4 @@
-"""Filing Bench TUI shell: compose + dossier + session recent + workers."""
+"""Textual application for Dietrich's terminal interface."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from textual.widgets.option_list import Option
 
 from dietrich.brand import PRODUCT_NAME, SUBTITLE
 from dietrich.dispatch import export_document_hash, inspect_document, unlock_document
+from dietrich.domain.models import DocumentInspection, UnlockOptions, UnlockResult
 from dietrich.tui.compose import compose_app
 from dietrich.tui.dossier import (
     DossierView,
@@ -39,9 +40,7 @@ from dietrich.tui.options_map import (
 from dietrich.tui.session_history import RecentSession, note_from_inspection
 from dietrich.tui.tasks import export_hash_message, export_hash_task, inspect_task, unlock_task
 from dietrich.tui.theme import register_dietrich_theme
-from dietrich.types import DocumentInspection, UnlockOptions, UnlockResult
 
-# Styles live under tui/styles/ (split for maintainability; loaded relative to this module).
 _STYLE_FILES = (
     "styles/base.tcss",
     "styles/chrome.tcss",
@@ -76,11 +75,11 @@ class DietrichApp(App[None]):
         self._session = RecentSession()
 
     def compose(self) -> ComposeResult:
-        """Build the Filing Bench workbench (see compose.py)."""
+        """Build the terminal interface."""
         yield from compose_app(self._initial_path)
 
     def on_mount(self) -> None:
-        """Register Werkbank theme, seed the log, auto-inspect when given a path."""
+        """Initialize the theme and inspect an initial path when provided."""
         theme_name = register_dietrich_theme(self)
         self.theme = theme_name
         self._apply_responsive_layout(self.size.width, self.size.height)

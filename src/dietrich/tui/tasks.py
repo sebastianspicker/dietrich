@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Generic, TypeVar
 
 from dietrich.dispatch import export_document_hash, inspect_document, unlock_document
+from dietrich.domain.models import DocumentInspection, UnlockOptions, UnlockResult
 from dietrich.errors import DietrichError
-from dietrich.types import DocumentInspection, UnlockOptions, UnlockResult
 
 _Value = TypeVar("_Value")
 

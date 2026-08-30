@@ -1,8 +1,7 @@
 """OOXML ZIP package inspect/unlock pipeline.
 
 Applies format transformers per part, optional signature strip and VBA clear,
-preserves ZipInfo metadata, verifies the written archive, then atomically
-publishes the output.
+preserves ZipInfo metadata, and writes a verified unpublished candidate.
 """
 
 from __future__ import annotations
@@ -12,6 +11,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from dietrich.domain.artifacts import ArtifactKind, CandidateArtifact
+from dietrich.domain.models import (
+    DocumentFormat,
+    DocumentInspection,
+    UnlockOptions,
+)
 from dietrich.errors import InvalidDocumentError
 from dietrich.ooxml.excel import (
     VBA_PROJECT_PATHS,
@@ -20,17 +25,10 @@ from dietrich.ooxml.excel import (
 )
 from dietrich.ooxml.powerpoint import inspect_powerpoint_parts, transform_powerpoint_part
 from dietrich.ooxml.props import inspect_props_parts, transform_props_part
+from dietrich.ooxml.signatures.strip import strip_signature_members
+from dietrich.ooxml.stats import PartStats
 from dietrich.ooxml.word import inspect_word_parts, transform_word_part
-from dietrich.safety.publish import publish_output, temporary_output_path
 from dietrich.safety.zip_archive import package_is_signed, validate_archive_safety
-from dietrich.signatures.strip import strip_signature_members
-from dietrich.types import (
-    DocumentFormat,
-    DocumentInspection,
-    PartStats,
-    UnlockOptions,
-    UnlockResult,
-)
 
 Transformer = Callable[[str, bytes, UnlockOptions, PartStats], bytes]
 
@@ -48,20 +46,23 @@ class ArchiveRewriteContext:
     warnings: list[str]
 
 
-def _format_from_names(names: list[str]) -> DocumentFormat:
-    """Internal helper: _format_from_names."""
-    normalized = [n.replace("\\", "/") for n in names]
-    if any(n.startswith("xl/") for n in normalized):
-        return DocumentFormat.EXCEL_OOXML
-    if any(n.startswith("word/") for n in normalized):
-        return DocumentFormat.WORD_OOXML
-    if any(n.startswith("ppt/") for n in normalized):
-        return DocumentFormat.POWERPOINT_OOXML
-    return DocumentFormat.UNKNOWN
+MAIN_PART_FORMATS = {
+    "xl/workbook.xml": DocumentFormat.EXCEL_OOXML,
+    "word/document.xml": DocumentFormat.WORD_OOXML,
+    "ppt/presentation.xml": DocumentFormat.POWERPOINT_OOXML,
+}
+
+
+def identify_ooxml_format(names: list[str]) -> DocumentFormat:
+    """Identify exactly one defining OOXML main part; reject decoys and ambiguity."""
+    normalized = {name.replace("\\", "/") for name in names}
+    formats = {fmt for part, fmt in MAIN_PART_FORMATS.items() if part in normalized}
+    if len(formats) != 1:
+        return DocumentFormat.UNKNOWN
+    return formats.pop()
 
 
 def _transformers_for(fmt: DocumentFormat) -> list[Transformer]:
-    """Internal helper: _transformers_for."""
     common: list[Transformer] = [transform_props_part]
     if fmt == DocumentFormat.EXCEL_OOXML:
         return [transform_excel_part, *common]
@@ -79,7 +80,7 @@ def inspect_ooxml_package(path: Path, *, allow_signed: bool = False) -> Document
         with zipfile.ZipFile(input_path) as archive:
             validate_archive_safety(archive, allow_signed=allow_signed)
             names = archive.namelist()
-            fmt = _format_from_names(names)
+            fmt = identify_ooxml_format(names)
             signed = package_is_signed(names)
             vba = any(p in names for p in VBA_PROJECT_PATHS)
 
@@ -137,16 +138,16 @@ def _inspect_format_parts(
     return list(inspect_parts(names, read)), list(strategies)
 
 
-def unlock_ooxml_package(
-    input_path: Path,
-    output_path: Path,
+def write_ooxml_candidate(
+    source: Path,
+    candidate_path: Path,
     options: UnlockOptions,
-) -> UnlockResult:
-    """Write a soft-unlocked copy of an OOXML package."""
-    source_path = Path(input_path)
-    target_path = Path(output_path)
-
-    _require_output_path(target_path, options)
+) -> CandidateArtifact:
+    """Write and verify an unpublished soft-unlocked OOXML candidate."""
+    source_path = Path(source)
+    candidate = Path(candidate_path)
+    if candidate.resolve() == source_path.resolve():
+        raise InvalidDocumentError("OOXML candidate path must differ from its source path.")
 
     stats = PartStats()
     warnings: list[str] = []
@@ -154,30 +155,33 @@ def unlock_ooxml_package(
     vba_present = False
 
     try:
-        with temporary_output_path(target_path) as temp_path:
-            with zipfile.ZipFile(source_path) as source:
-                validate_archive_safety(source, allow_signed=options.strip_signatures)
-                names = source.namelist()
-                fmt = _format_from_names(names)
-                vba_present = any(p in names for p in VBA_PROJECT_PATHS)
-                transformers = _transformers_for(fmt)
-
-                skip_names, rewritten_parts = _signature_rewrites(
-                    names, source.read, options, stats, warnings
+        with zipfile.ZipFile(source_path) as source_archive:
+            validate_archive_safety(source_archive, allow_signed=options.strip_signatures)
+            names = source_archive.namelist()
+            fmt = identify_ooxml_format(names)
+            if fmt == DocumentFormat.UNKNOWN:
+                raise InvalidDocumentError(
+                    f"{source_path} is a ZIP archive but not a supported OOXML document."
                 )
+            vba_present = any(p in names for p in VBA_PROJECT_PATHS)
+            transformers = _transformers_for(fmt)
 
-                rewrite_context = ArchiveRewriteContext(
-                    source=source,
-                    transformers=transformers,
-                    skip_names=skip_names,
-                    rewritten_parts=rewritten_parts,
-                    options=options,
-                    stats=stats,
-                    warnings=warnings,
-                )
-                _write_transformed_archive(temp_path, rewrite_context)
+            skip_names, rewritten_parts = _signature_rewrites(
+                names, source_archive.read, options, stats, warnings
+            )
 
-            _verify_and_publish_package(temp_path, target_path, options)
+            rewrite_context = ArchiveRewriteContext(
+                source=source_archive,
+                transformers=transformers,
+                skip_names=skip_names,
+                rewritten_parts=rewritten_parts,
+                options=options,
+                stats=stats,
+                warnings=warnings,
+            )
+            _write_transformed_archive(candidate, rewrite_context)
+
+        _verify_candidate_package(candidate, options, fmt)
     except zipfile.BadZipFile as exc:
         raise InvalidDocumentError(
             f"{source_path} is not a valid OOXML ZIP. Corrupt files and "
@@ -186,43 +190,46 @@ def unlock_ooxml_package(
     except RuntimeError as exc:
         raise InvalidDocumentError(f"{source_path} could not be read: {exc}") from exc
 
-    return _package_result(source_path, target_path, stats, fmt, vba_present, warnings)
-
-
-def _require_output_path(target_path: Path, options: UnlockOptions) -> None:
-    """Refuse to overwrite an existing package unless the caller opted in."""
-    if target_path.exists() and not options.overwrite:
-        from dietrich.errors import OutputExistsError
-
-        raise OutputExistsError(f"{target_path} already exists.")
-
-
-def _package_result(
-    source_path: Path,
-    target_path: Path,
-    stats: PartStats,
-    fmt: DocumentFormat,
-    vba_present: bool,
-    warnings: list[str],
-) -> UnlockResult:
-    """Construct the stable unlock result after a successful package rewrite."""
-    return UnlockResult(
-        input_path=source_path,
-        output_path=target_path,
-        removed=stats.to_removal_counts(),
+    return CandidateArtifact(
+        path=candidate,
+        source_path=source_path,
+        kind=ArtifactKind.OOXML,
         document_format=fmt,
+        removed=stats.to_removal_counts(),
         vba_project_present=vba_present,
         warnings=tuple(warnings),
     )
 
 
-def _verify_and_publish_package(temp_path: Path, target_path: Path, options: UnlockOptions) -> None:
-    """Check the written ZIP before atomically publishing it to the target path."""
-    with zipfile.ZipFile(temp_path) as output_archive:
+def _verify_candidate_package(
+    candidate_path: Path, options: UnlockOptions, expected_format: DocumentFormat
+) -> None:
+    """Check the written OOXML candidate before returning it to its publisher."""
+    with zipfile.ZipFile(candidate_path) as output_archive:
+        validate_archive_safety(output_archive, allow_signed=options.strip_signatures)
+        actual_format = identify_ooxml_format(output_archive.namelist())
+        if actual_format != expected_format:
+            raise InvalidDocumentError(
+                f"written OOXML identity changed: expected {expected_format.value}, "
+                f"found {actual_format.value}"
+            )
         failed_member = output_archive.testzip()
     if failed_member is not None:
         raise InvalidDocumentError(f"written package failed ZIP verification at {failed_member}")
-    publish_output(temp_path, target_path, overwrite=options.overwrite)
+
+
+def validate_ooxml_identity(path: Path, expected_format: DocumentFormat) -> None:
+    """Recheck a final candidate's defining main part against its declared format."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            actual = identify_ooxml_format(archive.namelist())
+    except zipfile.BadZipFile as exc:
+        raise InvalidDocumentError(f"{path} is not a valid OOXML ZIP: {exc}") from exc
+    if actual != expected_format:
+        raise InvalidDocumentError(
+            f"OOXML candidate identity mismatch: expected {expected_format.value}, "
+            f"found {actual.value}"
+        )
 
 
 def _signature_rewrites(

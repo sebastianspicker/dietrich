@@ -30,19 +30,15 @@ def generate_ooxml_mutants(
         data = bytearray(original)
         mode = i % 4
         if mode == 0 and len(data) > 64:
-            # Bit flip in random locations
             for _ in range(rng.randint(1, 8)):
                 pos = rng.randrange(len(data))
                 data[pos] ^= 1 << rng.randrange(8)
         elif mode == 1:
-            # Truncation
             cut = rng.randint(len(data) // 2, max(len(data) // 2 + 1, len(data) - 1))
             data = data[:cut]
         elif mode == 2:
-            # Inject oversized local name noise near end
             data.extend(b"A" * rng.randint(16, 256))
         else:
-            # Zero a random window
             if len(data) > 32:
                 start = rng.randrange(0, len(data) - 16)
                 end = min(len(data), start + rng.randint(4, 32))

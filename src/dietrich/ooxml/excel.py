@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from dietrich.domain.models import ProtectedPart, UnlockOptions
+from dietrich.ooxml.stats import PartStats
 from dietrich.ooxml.xml_strip import count_elements, remove_elements_from_xml_bytes
-from dietrich.types import PartStats, ProtectedPart, UnlockOptions
 
 WORKSHEET_PREFIXES = (
     "xl/worksheets/",
@@ -24,9 +25,6 @@ def is_sheet_xml(name: str) -> bool:
 
 
 # Back-compat alias
-is_worksheet_xml = is_sheet_xml
-
-
 def inspect_excel_parts(names: list[str], read) -> list[ProtectedPart]:
     """Find sheetProtection/workbookProtection parts."""
     parts: list[ProtectedPart] = []

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from dietrich.types import UnlockOptions
+from dietrich.domain.models import UnlockOptions
 
 
 @dataclass(frozen=True)

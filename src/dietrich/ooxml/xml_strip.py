@@ -58,15 +58,6 @@ def count_elements(source: bytes, element_local_name: str, path: str) -> int:
     return sum(1 for element in root.iter() if local_name(element.tag) == element_local_name)
 
 
-def count_entry_elements(archive_read, name: str, element_local_name: str) -> int:
-    """Count target elements in a ZIP entry via ``archive_read(name)``."""
-    try:
-        data = archive_read(name)
-    except KeyError:
-        return 0
-    return count_elements(source=data, element_local_name=element_local_name, path=name)
-
-
 def remove_elements_from_xml_bytes(
     source: bytes,
     element_local_name: str,

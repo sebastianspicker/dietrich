@@ -1,5 +1,5 @@
-"""OOXML package and soft-protection helpers."""
+"""OOXML package, encryption, and soft-protection helpers."""
 
-from dietrich.ooxml.package import inspect_ooxml_package, unlock_ooxml_package
+from dietrich.ooxml.package import inspect_ooxml_package, write_ooxml_candidate
 
-__all__ = ["inspect_ooxml_package", "unlock_ooxml_package"]
+__all__ = ["inspect_ooxml_package", "write_ooxml_candidate"]

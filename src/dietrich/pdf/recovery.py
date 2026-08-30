@@ -1,8 +1,4 @@
-"""PDF open-password try/decrypt and hash export entrypoints (pikepdf).
-
-Permission strip lives in :mod:`dietrich.pdf.permissions`; this module focuses
-on user-password crypto and hash export routing.
-"""
+"""PDF open-password recovery and hash-export entrypoints (pikepdf)."""
 
 from __future__ import annotations
 
@@ -10,7 +6,7 @@ import shutil
 from pathlib import Path
 
 from dietrich.errors import EncryptedDocumentError, InvalidDocumentError, MissingDependencyError
-from dietrich.process import run_pdf2john_sync
+from dietrich.external_tools import run_pdf2john_sync
 
 
 def _require_pikepdf():
@@ -36,23 +32,6 @@ def try_password(path: Path, password: str) -> bool:
         return False
 
 
-def decrypt_to(
-    path: Path,
-    password: str,
-    output_path: Path,
-    *,
-    strip_permissions: bool = True,
-) -> None:
-    """Save PDF without encryption using the given user password."""
-    del strip_permissions
-    pikepdf = _require_pikepdf()
-    try:
-        with pikepdf.open(path, password=password or "", allow_overwriting_input=False) as pdf:
-            pdf.save(output_path, encryption=False)
-    except pikepdf.PasswordError as exc:
-        raise EncryptedDocumentError("incorrect password for encrypted PDF") from exc
-
-
 def export_hash_line(path: Path, fmt: str = "hashcat") -> str:
     """Export a crackable PDF hash (native first, pdf2john fallback)."""
     path = Path(path)
@@ -68,7 +47,7 @@ def export_hash_line(path: Path, fmt: str = "hashcat") -> str:
 
 def _native_hash_line(path: Path, fmt: str) -> str:
     """Ask the native parser for a hash before invoking an external fallback."""
-    from dietrich.crypto.pdf_hash import export_pdf_hash
+    from dietrich.pdf.hash import export_pdf_hash
 
     return export_pdf_hash(path, fmt=fmt)
 

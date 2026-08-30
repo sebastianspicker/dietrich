@@ -270,7 +270,11 @@ def _add_pikepdf_crypt_filter(pikepdf, encrypt, result: dict[str, str]) -> None:
 
 def _encrypt_from_raw_trailer(path: Path) -> dict[str, str] | None:
     """Fallback: parse /Encrypt from raw PDF trailer bytes."""
-    return _find_encrypt_dict(path.read_bytes())
+    try:
+        raw = read_file_limited(path, MAX_NATIVE_PDF_HASH_BYTES)
+    except ValueError:
+        return None
+    return _find_encrypt_dict(raw)
 
 
 def _find_encrypt_dict(raw: bytes) -> dict[str, str] | None:
@@ -389,18 +393,14 @@ def _extract_inline_dict(trailer_body: bytes, key: bytes) -> bytes:
 def _parse_dict_body(body: bytes) -> dict[str, str]:
     """Parse PDF dict body into coarse string values (keys without slash)."""
     text = body.decode("latin-1", errors="latin-1")
-    # Normalize
     result: dict[str, str] = {}
-    # Names
     for m in re.finditer(r"/([A-Za-z0-9_]+)\s*/([A-Za-z0-9_+-]+)", text):
         result.setdefault(m.group(1), "/" + m.group(2))
-    # Integers
     for m in re.finditer(r"/([A-Za-z0-9_]+)\s+(-?\d+)", text):
         result.setdefault(m.group(1), m.group(2))
-    # Hex strings <...>
     for m in re.finditer(r"/([A-Za-z0-9_]+)\s*<([0-9A-Fa-f\s]+)>", text):
         result[m.group(1)] = "<" + re.sub(r"\s+", "", m.group(2)) + ">"
-    # Literal strings ( ... ) with basic escapes - crude
+    # Only the simple literal strings used by supported handlers are accepted here.
     for m in re.finditer(r"/([A-Za-z0-9_]+)\s\((?:\\.|[^\\)])\)", text):
         full = m.group(0)
         key = m.group(1)

@@ -1,27 +1,26 @@
-"""Honest re-sign of OOXML packages with a user-supplied cert/key (never forges identity)."""
+"""Write signed OOXML candidates from a user-supplied certificate and key."""
 
 from __future__ import annotations
 
 import base64
 import hashlib
 import zipfile
-from html import escape as escape_html
+from html import escape as escape_xml
 from pathlib import Path
 
-from dietrich.errors import InvalidDocumentError, MissingDependencyError, OutputExistsError
-from dietrich.safety.publish import publish_output, temporary_output_path
+from dietrich.domain.artifacts import ArtifactKind, CandidateArtifact
+from dietrich.domain.models import DocumentFormat, RemovalCounts
+from dietrich.errors import InvalidDocumentError, MissingDependencyError
 from dietrich.safety.zip_archive import validate_archive_safety
 
 
-def resign_ooxml_package(
+def write_signed_candidate(
     package_path: Path,
-    output_path: Path,
-    *,
+    candidate_path: Path,
     cert_pem: Path,
     key_pem: Path,
-    overwrite: bool = False,
-) -> Path:
-    """Re-sign an OOXML package using cert/key PEM files.
+) -> CandidateArtifact:
+    """Write and verify an unpublished re-signed OOXML candidate.
 
     Builds `_xmlsignatures/origin.sigs` + `sig1.xml` with XML-DSig enveloping
     a simple manifest of part digests (ECMA-376 style subset).
@@ -29,20 +28,25 @@ def resign_ooxml_package(
     x509, hashes, serialization, padding = _signing_primitives()
 
     package_path = Path(package_path)
-    output_path = Path(output_path)
-    if output_path.exists() and not overwrite:
-        raise OutputExistsError(f"{output_path} already exists.")
+    candidate = Path(candidate_path)
+    if candidate.resolve() == package_path.resolve():
+        raise InvalidDocumentError("signed candidate path must differ from its source path.")
 
     certificate = x509.load_pem_x509_certificate(Path(cert_pem).read_bytes())
     key = serialization.load_pem_private_key(Path(key_pem).read_bytes(), password=None)
+    _require_matching_public_keys(certificate, key, serialization)
     parts = _unsigned_package_parts(package_path)
     _add_signature_parts(parts, certificate, key, hashes, serialization, padding)
-    with temporary_output_path(output_path) as temp_path:
-        _write_signed_package(temp_path, parts)
-        _verify_signed_package(temp_path)
-        publish_output(temp_path, output_path, overwrite=overwrite)
+    _write_signed_package(candidate, parts)
+    _verify_signed_package(candidate)
 
-    return output_path
+    return CandidateArtifact(
+        path=candidate,
+        source_path=package_path,
+        kind=ArtifactKind.OOXML,
+        document_format=_format_from_part_names(parts),
+        removed=RemovalCounts(),
+    )
 
 
 def _signing_primitives():
@@ -57,6 +61,25 @@ def _signing_primitives():
             "pip install 'dietrich[sign]' (cryptography)."
         ) from exc
     return x509, hashes, serialization, padding
+
+
+def _require_matching_public_keys(certificate, key, serialization) -> None:
+    """Reject a PEM pair whose certificate and private key name different keys."""
+    try:
+        certificate_key = certificate.public_key().public_bytes(
+            serialization.Encoding.DER,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        private_key = key.public_key().public_bytes(
+            serialization.Encoding.DER,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise InvalidDocumentError(
+            "could not read the certificate/private-key public keys"
+        ) from exc
+    if certificate_key != private_key:
+        raise InvalidDocumentError("certificate and private key do not match")
 
 
 def _unsigned_package_parts(package_path: Path) -> dict[str, bytes]:
@@ -97,6 +120,13 @@ def _part_references(parts: dict[str, bytes]) -> list[tuple[str, str]]:
     ]
 
 
+def _format_from_part_names(parts: dict[str, bytes]) -> DocumentFormat:
+    """Identify the OOXML document family from its retained package part names."""
+    from dietrich.ooxml.package import identify_ooxml_format
+
+    return identify_ooxml_format(list(parts))
+
+
 def _signature_origin_xml() -> str:
     """Build the OOXML relationship that points to the package signature XML."""
     return (
@@ -131,13 +161,11 @@ def _verify_signed_package(path: Path) -> None:
 
 
 def _build_manifest_xml(references: list[tuple[str, str]]) -> str:
-    """Internal helper: _build_manifest_xml."""
     refs = []
     for name, digest in references:
-        # Package-relative URI
         uri = "/" + name.lstrip("/")
         refs.append(
-            f'<Reference URI="{escape_html(uri, quote=False)}">'
+            f'<Reference URI="{escape_xml(uri, quote=True)}">'
             f"<DigestMethod Algorithm="
             f'"http://www.w3.org/2001/04/xmlenc#sha256"/>'
             f"<DigestValue>{digest}</DigestValue>"
@@ -147,8 +175,7 @@ def _build_manifest_xml(references: list[tuple[str, str]]) -> str:
 
 
 def _build_signed_info(manifest_xml: str) -> str:
-    # Simplified SignedInfo - Office may require more transforms; this is honest user re-sign.
-    """Internal helper: _build_signed_info."""
+    # Office-specific transforms are intentionally omitted; compatibility is limited.
     digest = hashlib.sha256(manifest_xml.encode("utf-8")).digest()
     manifest_digest = base64.b64encode(digest).decode("ascii")
     return (
@@ -169,7 +196,6 @@ def _build_signature_xml(
     cert_b64: str,
     manifest_xml: str,
 ) -> str:
-    """Internal helper: _build_signature_xml."""
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#" Id="idPackageSignature">'
@@ -184,7 +210,6 @@ def _build_signature_xml(
 
 
 def _ensure_signature_content_types(ct: bytes) -> bytes:
-    """Internal helper: _ensure_signature_content_types."""
     text = ct.decode("utf-8", errors="replace")
     if "_xmlsignatures" in text:
         return ct
@@ -206,7 +231,6 @@ def _ensure_signature_content_types(ct: bytes) -> bytes:
 
 
 def _ensure_origin_rel(rels: bytes) -> bytes:
-    """Internal helper: _ensure_origin_rel."""
     text = rels.decode("utf-8", errors="replace")
     if "digital-signature/origin" in text:
         return rels

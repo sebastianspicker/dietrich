@@ -1,14 +1,10 @@
-"""In-memory session recent-files list for the Filing Bench rail.
-
-Local session only - no disk persistence, no network index.
-"""
+"""In-memory recent-file list for the terminal interface."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 
-# Compact monogram for the session rail (Filing Bench mockup).
 _SUFFIX_MARK = {
     ".xlsx": "X",
     ".xlsm": "X",
@@ -74,14 +70,12 @@ class RecentSession:
         try:
             resolved = resolved.resolve()
         except OSError:
-            # Unresolved is fine for display; keep expanded form.
             pass
 
         mark = file_mark(resolved)
         name = resolved.name or str(resolved)
         clean_note = (note or "").strip()
 
-        # Drop existing entry for the same path (re-insert at front).
         self._items = [e for e in self._items if e.path != resolved]
         entry = RecentEntry(path=resolved, mark=mark, name=name, note=clean_note)
         self._items.insert(0, entry)

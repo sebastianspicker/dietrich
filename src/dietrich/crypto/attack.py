@@ -9,12 +9,12 @@ from __future__ import annotations
 import itertools
 import string
 from collections.abc import Callable, Iterator
-from concurrent.futures import CancelledError, ProcessPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, CancelledError, ProcessPoolExecutor, wait
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
+from dietrich.domain.models import AttackOptions, AttackResult
 from dietrich.errors import EncryptedDocumentError
-from dietrich.types import AttackOptions, AttackResult
 
 VerifierFn = Callable[[str], bool]
 FileAttackWorker = Callable[[tuple[str, str]], str | None]
@@ -62,14 +62,12 @@ def expand_mask(mask: str) -> Iterator[str]:
 
 
 def iter_candidates(options: AttackOptions) -> Iterator[str]:
-    """Yield unique password candidates under AttackOptions caps."""
-    seen: set[str] = set()
+    """Stream password candidates under the configured attempt cap."""
+    yielded = 0
     for password in _candidate_sources(options):
-        if password in seen:
-            continue
-        seen.add(password)
         yield password
-        if len(seen) >= options.max_candidates:
+        yielded += 1
+        if yielded >= options.max_candidates:
             return
 
 
@@ -126,85 +124,76 @@ def run_attack(verifier: VerifierFn, options: AttackOptions) -> AttackResult:
     )
 
 
-def _try_ooxml_password(args: tuple[str, str]) -> str | None:
-    """Process-pool worker: (path, password) → password if valid."""
-    path_str, password = args
-    from dietrich.crypto.ooxml_crypto import try_password
-
-    try:
-        if try_password(Path(path_str), password):
-            return password
-    except (EncryptedDocumentError, OSError, RuntimeError, TypeError, ValueError):
-        return None
-    return None
-
-
-def _try_pdf_password(args: tuple[str, str]) -> str | None:
-    """Return True if pikepdf accepts this password for the path."""
-    path_str, password = args
-    from dietrich.crypto.pdf_crypto import try_password
-
-    try:
-        if try_password(Path(path_str), password):
-            return password
-    except (EncryptedDocumentError, OSError, RuntimeError, TypeError, ValueError):
-        return None
-    return None
-
-
 def run_file_attack(
     path: Path,
     options: AttackOptions,
     *,
-    kind: str = "ooxml",
+    worker: FileAttackWorker,
 ) -> AttackResult:
-    """Attack an encrypted file; parallelize when workers > 1."""
+    """Attack an encrypted file with a format-owned, process-safe verifier."""
     path = Path(path)
-    worker = _try_ooxml_password if kind == "ooxml" else _try_pdf_password
-    candidates = list(iter_candidates(options))
-    if not candidates:
-        return _attack_not_found(0)
-
+    candidates = iter_candidates(options)
     if options.workers <= 1:
         return _run_serial_file_attack(path, candidates, worker)
     return _run_parallel_file_attack(path, candidates, worker, options.workers)
 
 
 def _run_serial_file_attack(
-    path: Path, candidates: list[str], worker: FileAttackWorker
+    path: Path, candidates: Iterator[str], worker: FileAttackWorker
 ) -> AttackResult:
     """Try candidate passwords in order without creating child processes."""
+    tried = 0
     for tried, password in enumerate(candidates, start=1):
         found = worker((str(path), password))
         if found is not None:
             return _attack_found(found, tried)
-    return _attack_not_found(len(candidates))
+    return _attack_not_found(tried)
 
 
 def _run_parallel_file_attack(
-    path: Path, candidates: list[str], worker: FileAttackWorker, workers: int
+    path: Path, candidates: Iterator[str], worker: FileAttackWorker, workers: int
 ) -> AttackResult:
-    """Submit independent candidates and cancel pending work after a match."""
+    """Verify candidates with a bounded in-flight process-pool window."""
+    tried = 0
+    exhausted = False
+    window = max(1, workers * 2)
     with ProcessPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(worker, (str(path), password)): password for password in candidates}
-        for tried, future in enumerate(as_completed(futures), start=1):
-            try:
-                result = future.result()
-            except (
-                BrokenProcessPool,
-                CancelledError,
-                EncryptedDocumentError,
-                OSError,
-                RuntimeError,
-                TypeError,
-                ValueError,
-            ):
-                result = None
-            if result is not None:
-                for pending in futures:
-                    pending.cancel()
-                return _attack_found(result, tried)
-    return _attack_not_found(len(candidates))
+        pending = set()
+        while pending or not exhausted:
+            while not exhausted and len(pending) < window:
+                try:
+                    password = next(candidates)
+                except StopIteration:
+                    exhausted = True
+                    break
+                pending.add(pool.submit(worker, (str(path), password)))
+            if not pending:
+                break
+            completed, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for future in completed:
+                tried += 1
+                result = _completed_password(future)
+                if result is not None:
+                    for queued in pending:
+                        queued.cancel()
+                    return _attack_found(result, tried)
+    return _attack_not_found(tried)
+
+
+def _completed_password(future) -> str | None:
+    """Return one completed worker result while normalizing expected failures."""
+    try:
+        return future.result()
+    except (
+        BrokenProcessPool,
+        CancelledError,
+        EncryptedDocumentError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ):
+        return None
 
 
 def _attack_found(password: str, tried: int) -> AttackResult:

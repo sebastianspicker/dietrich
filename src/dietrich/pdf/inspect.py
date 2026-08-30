@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dietrich.domain.models import DocumentFormat, DocumentInspection
 from dietrich.safety.bounded_io import read_file_prefix
-from dietrich.types import DocumentFormat, DocumentInspection
 
 
 def inspect_pdf(path: Path) -> DocumentInspection:
     """Return DocumentInspection for a PDF path."""
     input_path = Path(path)
-    strategies: list[str] = ["soft:pdf_permissions"]
+    strategies: list[str] = []
     notes: list[str] = []
     encrypted = False
     user_required = False
@@ -21,7 +21,6 @@ def inspect_pdf(path: Path) -> DocumentInspection:
         import pikepdf
     except ImportError:
         notes.append("Install dietrich[pdf] (pikepdf) for full PDF inspect/unlock.")
-        # Heuristic: look for /Encrypt in raw bytes
         blob = read_file_prefix(input_path, 200_000)
         if b"/Encrypt" in blob:
             encrypted = True
@@ -39,9 +38,7 @@ def inspect_pdf(path: Path) -> DocumentInspection:
 
     try:
         with pikepdf.open(input_path) as pdf:
-            # Opened without password
             encrypted = bool(pdf.is_encrypted)
-            # If encrypted but opened empty password, may still have restrictions
             owner_restrictions = encrypted
             if encrypted:
                 strategies.append("soft:pdf_permissions")

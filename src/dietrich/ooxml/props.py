@@ -7,8 +7,9 @@ import re
 from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
 
+from dietrich.domain.models import ProtectedPart, UnlockOptions
+from dietrich.ooxml.stats import PartStats
 from dietrich.ooxml.xml_strip import ElementLike, count_elements, local_name
-from dietrich.types import PartStats, ProtectedPart, UnlockOptions
 
 APP_PROPS = "docProps/app.xml"
 CUSTOM_PROPS = "docProps/custom.xml"
