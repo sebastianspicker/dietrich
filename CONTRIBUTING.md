@@ -13,7 +13,7 @@ python -m pip install -e '.[full,dev]'
 
 ## Change workflow
 
-1. Trace the affected format from `src/dietrich/dispatch.py` to its implementation.
+1. Trace the use case in `src/dietrich/application/` to its format implementation.
 2. Reproduce the current behavior with the narrowest relevant test.
 3. Change the shared implementation instead of duplicating logic in the CLI or TUI.
 4. Add tests for success, failure, and output-safety behavior.
@@ -27,7 +27,8 @@ must construct only the minimal synthetic data they need at runtime.
 
 - Support Python 3.11 and later.
 - Follow the Ruff rules configured in `pyproject.toml`.
-- Keep document operations in the format or dispatch modules.
+- Keep workflow policy in `application/` and document semantics in the format package.
+- Format writers produce unpublished candidates; only the artifact transaction publishes.
 - Keep the TUI limited to state collection and presentation.
 - Return explicit errors for unsupported, unsafe, or incomplete operations.
 - Preserve ZIP metadata and unrelated document content where the format permits.
@@ -38,12 +39,15 @@ must construct only the minimal synthetic data they need at runtime.
 ## Verification
 
 ```bash
-ruff check src tests scripts examples
-pytest -q
+uv run ruff check src tests examples
+uv run ruff format --check src tests examples
+uv run pyright
+uv run pytest -q
 ```
 
-`tests/test_core.py` keeps the small direct safety contracts. Manually inspect
-terminal changes rather than committing generated captures.
+The test suite separates observable document contracts, adversarial regressions,
+and mechanically enforced dependency rules. Manually inspect terminal changes
+rather than committing generated captures.
 
 ## Pull requests
 

@@ -5,12 +5,12 @@ removing non-cryptographic protection, and recovering open passwords on document
 that you own or are authorized to modify. It supports Microsoft Office formats and
 PDF. An optional Textual interface exposes the same operations in a terminal.
 
-Version 0.4.0a4 is an alpha release. Command behavior, Python APIs, and output
+Version 0.4.0a5 is an alpha release. Command behavior, Python APIs, and output
 formats may change before a stable release.
 
 [Open the static interface demo](https://sebastianspicker.github.io/dietrich/).
-The demo uses sanitized sample data, cannot access local files, and marks all
-command-capable actions as simulated.
+It uses sanitized sample data, cannot access local files, and labels every
+operation as simulated.
 
 Run the same static artifact locally from the repository root:
 
@@ -18,13 +18,9 @@ Run the same static artifact locally from the repository root:
 python3 -m http.server 8000 --directory site
 ```
 
-Then open `http://127.0.0.1:8000/`. The files in `site/` use relative asset
-paths and are compatible with the `/dietrich/` repository subpath. GitHub Pages
-hosting for this demo is managed through the existing
-`sebastianspicker.github.io` site; this repository does not publish or deploy
-the demo itself. The central staging configuration is not part of this
-checkout, so the hosted page is not evidence that the current Dietrich
-worktree has been deployed.
+Then open `http://127.0.0.1:8000/`. The demo uses relative asset paths and works
+under the `/dietrich/` repository subpath. It is hosted separately; this
+repository contains no deployment workflow for it.
 
 ## Purpose and scope
 
@@ -36,7 +32,7 @@ Dietrich distinguishes between two protection layers:
   the file can be read.
 
 The application works on local files. It does not provide a service, network API,
-database, browser interface, or rights-management license acquisition.
+database, functional browser interface, or rights-management license acquisition.
 
 ## Current capabilities
 
@@ -46,7 +42,8 @@ database, browser interface, or rights-management license acquisition.
 | `.docx`, `.docm` | Inspect and remove document, write, and package-property protection |
 | `.pptx`, `.pptm` | Inspect and remove modification verifiers and package-property protection |
 | Encrypted Office files | Verify explicit passwords, search wordlists or masks, run bounded brute force, export hashes, or invoke a local `hashcat` executable |
-| `.xls`, `.doc`, `.ppt` | Inspect and patch recognized legacy binary protection records without changing stream lengths |
+| `.xls`, `.doc` | Inspect and patch verified BIFF8/FIB protection fields without changing stream lengths |
+| `.ppt` | Inspect the container; rewriting is rejected until a verified record parser exists |
 | PDF | Inspect encryption and permissions, recover a user password, and write an unencrypted copy |
 | Signed OOXML | Reject by default, or create an unsigned copy with `--strip-signatures` |
 
@@ -91,7 +88,7 @@ python -m pip install -e '.[full]'
 ```
 
 Install only the features you need by replacing `full` with one or more of
-`crypto`, `pdf`, `research`, `sign`, or `ui`.
+`crypto`, `pdf`, `legacy`, `sign`, or `ui`.
 
 For development:
 
@@ -180,16 +177,16 @@ result = unlock_document(Path("report.xlsx"), Path("report_editable.xlsx"))
 
 | Path | Contents |
 |---|---|
-| `src/dietrich/cli.py` | CLI parsing, output, and exit codes |
-| `src/dietrich/dispatch.py` | Format classification and operation routing |
-| `src/dietrich/ooxml/` | OOXML inspection and rewriting |
-| `src/dietrich/crypto/` | Password recovery, hash export, hashcat, and IRM detection |
-| `src/dietrich/legacy/` | Legacy Office record inspection and patching |
-| `src/dietrich/pdf/` | PDF inspection and permission removal |
-| `src/dietrich/signatures/` | OOXML signature stripping and experimental re-signing |
-| `src/dietrich/safety/` | Archive validation and output publication |
+| `src/dietrich/domain/` | Typed assessment findings and unpublished-artifact records |
+| `src/dietrich/application/` | Assessment, recovery, hash export, and make-editable use cases |
+| `src/dietrich/dispatch.py` | Stable public-function facade |
+| `src/dietrich/ooxml/` | OOXML inspection, encryption, signatures, and candidate writing |
+| `src/dietrich/pdf/` | PDF inspection, recovery, hash export, and candidate writing |
+| `src/dietrich/legacy/` | Legacy Office record transforms and candidate writing |
+| `src/dietrich/crypto/` | Bounded password candidates and controlled hashcat integration |
+| `src/dietrich/safety/` | Bounded container I/O and the sole artifact transaction |
 | `src/dietrich/tui/` | Textual interface and packaged styles |
-| `tests/test_core.py` | Direct safety, parsing, legacy-format, and publication contracts |
+| `tests/` | Behavioral contracts, safety regressions, and dependency enforcement |
 | `examples/` | User-facing command examples |
 | `docs/` | Capability, strategy, and research references |
 
@@ -197,14 +194,15 @@ Focused references:
 
 - [Capability status](docs/ALPHA.md)
 - [Processing strategy](docs/STRATEGIES.md)
+- [Architecture](docs/ARCHITECTURE.md)
 - [Terminal interface](docs/TUI.md)
 - [Release and distribution](docs/RELEASE.md)
 
 ## Development workflow
 
-Keep format logic below `dispatch.py`; the CLI and TUI should translate user
-input into the same operation calls. Add focused tests for a changed format and a
-subprocess test when changing CLI behavior.
+Keep cross-format sequencing in `application/`, document semantics in the matching
+format package, and final publication in `safety/artifact_transaction.py`. The CLI
+and TUI translate user input into the same application calls.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for coding and review requirements.
 
@@ -213,12 +211,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for coding and review requirements.
 Run the repository checks from the project root:
 
 ```bash
-ruff check src tests scripts examples
-pytest -q
+uv run ruff check src tests examples
+uv run ruff format --check src tests examples
+uv run pyright
+uv run pytest -q
 ```
 
-CI installs `.[dev,full]` and runs Ruff and the direct pytest suite on Ubuntu
-with Python 3.11 through 3.13.
+CI synchronizes the committed lockfile and runs Ruff lint/format, Pyright, pytest,
+and an offline distribution build on Python 3.11 through 3.13.
 
 ## Deployment and operation
 
@@ -227,8 +227,9 @@ deployment, container definition, hosted runtime, or publication job. The
 Hatchling configuration in `pyproject.toml` defines editable and wheel packaging,
 including the Textual style files.
 
-Work on copies of important documents. Successful output publication uses a
-temporary file and refuses replacement unless `--force` is explicit.
+Work on copies of important documents. Successful output publication validates an
+unpublished candidate, writes the final file with mode `0600`, and refuses
+replacement unless `--force` is explicit.
 
 ## Troubleshooting
 

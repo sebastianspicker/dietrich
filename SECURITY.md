@@ -43,6 +43,6 @@ detection fails closed.
 ## Dependencies
 
 Optional format support uses `msoffcrypto-tool`, `pikepdf`, `olefile`,
-`cryptography`, `textual`, and `rich`. Review dependency updates and install from
-trusted package sources. `hashcat` is a separate executable and is not installed
-by Dietrich.
+`cryptography`, and `textual`. Review dependency updates and install from trusted
+package sources. `hashcat` is a separate executable and is not installed by
+Dietrich.

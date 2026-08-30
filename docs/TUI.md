@@ -9,14 +9,14 @@ the CLI. It does not contain a separate document-processing implementation.
 |---|---|
 | `tui/app.py` | Application lifecycle, actions, background work, and result display |
 | `tui/compose.py` | Widget composition |
-| `tui/options_map.py` | Conversion from form state to dispatch options |
+| `tui/options_map.py` | Conversion from form state to public operation options |
 | `tui/dossier.py` | Inspection and result presentation |
 | `tui/session_history.py` | Process-local recent paths, limited to 12 entries |
 | `tui/theme.py` | Textual color and style constants |
 | `tui/styles/*.tcss` | Layout, component, compact, and session-rail styles |
 
 Document classification, password recovery, rewriting, and output publication
-remain under `dietrich.dispatch` and the format packages.
+remain in the application services and format packages.
 
 ## Layout and interaction
 
@@ -50,7 +50,7 @@ in `pyproject.toml`.
 Run:
 
 ```bash
-pytest -q
+uv run pytest -q
 ```
 
 Review focus order, labels, narrow-terminal layout, busy-state behavior, and

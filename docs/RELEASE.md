@@ -1,16 +1,19 @@
 # Release and distribution
 
-The package version in `pyproject.toml` is 0.4.0a4 and its classifier is Alpha.
+The package version in `pyproject.toml` is 0.4.0a5 and its classifier is Alpha.
 The repository is a source-distributed local CLI and TUI project.
 
 ## Automated checks
 
 The GitHub Actions workflow runs on Ubuntu with Python 3.11, 3.12, and 3.13. It
-installs `.[dev,full]` and runs:
+synchronizes the committed lockfile with all extras and runs:
 
 ```bash
-ruff check src tests scripts examples
-pytest -q --tb=short
+uv run ruff check src tests examples
+uv run ruff format --check src tests examples
+uv run pyright
+uv run pytest -q --tb=short
+uv build --offline --no-sources --no-create-gitignore
 ```
 
 ## Distribution
