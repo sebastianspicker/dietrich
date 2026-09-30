@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from dietrich.operation import checkpoint
+
 CFBF_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 
 # CFBF directory metadata is attacker-controlled.  These limits are applied
@@ -30,6 +32,7 @@ def read_streams(path: Path) -> dict[str, bytes]:
     with olefile.OleFileIO(str(path)) as ole:
         entries = _bounded_stream_entries(ole)
         for entry in entries:
+            checkpoint()
             name = "/".join(entry)
             streams[name] = _read_stream_limited(ole, entry)
     return streams
@@ -78,6 +81,7 @@ def _bounded_stream_entries(ole) -> list[list[str]]:
         raise ValueError(f"CFB contains more than {MAX_CFB_STREAMS} streams")
     total = 0
     for entry in entries:
+        checkpoint()
         size = int(ole.get_size(entry))
         if size > MAX_CFB_STREAM_BYTES:
             raise ValueError(
@@ -157,6 +161,7 @@ def patch_streams(path: Path, output_path: Path, patches: dict[str, bytes]) -> l
         )
 
         for name, new_bytes in patches.items():
+            checkpoint()
             entry_path = _resolve_entry(ole, name)
             if entry_path is None:
                 continue

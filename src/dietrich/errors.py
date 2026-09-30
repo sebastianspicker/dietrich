@@ -41,3 +41,7 @@ class PasswordNotFoundError(DietrichError):
 
 class MissingDependencyError(DietrichError):
     """Raised when an optional extra is required but not installed."""
+
+
+class OperationCancelledError(DietrichError):
+    """An accepted cancellation stopped an operation before publication."""

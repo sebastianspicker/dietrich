@@ -29,14 +29,18 @@ from dietrich.errors import (
     EncryptedDocumentError,
     InvalidDocumentError,
     MissingDependencyError,
+    OperationCancelledError,
     OutputExistsError,
     PasswordNotFoundError,
     SignedDocumentError,
     UnsafeArchiveError,
     UnsupportedFormatError,
 )
+from dietrich.operation import OperationControl
 
 __all__ = [
+    "OperationControl",
+    "OperationCancelledError",
     "AttackOptions",
     "AttackResult",
     "DietrichError",

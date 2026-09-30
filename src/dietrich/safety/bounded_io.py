@@ -5,9 +5,12 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
+from dietrich.operation import checkpoint
+
 
 def read_file_prefix(path: Path, limit: int) -> bytes:
     """Read at most ``limit`` bytes from a file without loading the full input."""
+    checkpoint()
     if limit < 0:
         raise ValueError("prefix limit must be non-negative")
     with Path(path).open("rb", buffering=0) as handle:
@@ -16,6 +19,7 @@ def read_file_prefix(path: Path, limit: int) -> bytes:
 
 def read_file_limited(path: Path, limit: int) -> bytes:
     """Read a complete file only when it fits within ``limit`` bytes."""
+    checkpoint()
     if limit < 0:
         raise ValueError("file limit must be non-negative")
     with Path(path).open("rb", buffering=0) as handle:
@@ -27,6 +31,7 @@ def read_file_limited(path: Path, limit: int) -> bytes:
 
 def read_zip_member_prefix(archive: zipfile.ZipFile, name: str, limit: int) -> bytes:
     """Read at most ``limit`` decompressed bytes from a ZIP member."""
+    checkpoint()
     if limit < 0:
         raise ValueError("prefix limit must be non-negative")
     with archive.open(name) as member:

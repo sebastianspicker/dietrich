@@ -1,66 +1,67 @@
-/* Protection dossier (status panel) + semantic state borders. */
+/* Structured protection dossier: distinct fields and a stateful left signal. */
 
 #status-panel {
     height: auto;
-    min-height: 7;
-    max-height: 12;
-    margin: 1 0;
-    padding: 1 2;
-    background: #1B222C;
-    border: solid #4F7CAC;
+    min-height: 10;
+    max-height: 14;
+    margin: 0;
+    padding: 0 2;
+    background: #151B23;
+    border-left: tall #2A3442;
 }
 
-#status-header {
-    height: 2;
-}
+#status-header { height: 1; }
 
 #status-heading {
     width: 1fr;
-    color: #4F7CAC;
+    color: #8FB4DC;
     text-style: bold;
 }
 
 #status-meta {
     width: 22;
-    height: 2;
-    color: #8B97A8;
-    content-align: right top;
+    height: 1;
+    color: #8896A9;
+    content-align: right middle;
 }
 
-#status {
+#status-title { height: auto; color: #E4E9F0; text-style: bold; }
+
+#status-lede { height: auto; margin-top: 1; color: #9AA6B6; }
+
+#status-findings { height: auto; margin-top: 1; }
+
+.finding-row {
+    display: none;
+    height: 1;
+    background: #1C242F;
+    margin-bottom: 0;
+    padding: 0 1;
+}
+
+.finding-label { width: 20; color: #8896A9; text-style: bold; }
+.finding-value { width: 1fr; color: #E4E9F0; }
+.finding-value.-tone-ok { color: #82B58F; }
+.finding-value.-tone-warn { color: #D9A45B; }
+.finding-value.-tone-signal { color: #8FB4DC; }
+.finding-value.-tone-neutral { color: #E4E9F0; }
+
+#status-next-step {
     height: auto;
-    color: #D7DDE6;
+    margin-top: 0;
+    padding-top: 0;
+    border-top: solid #2A3442;
+    color: #9AA6B6;
 }
 
-/* Border and heading color reinforce the dossier state. */
-#status-panel.-status-info {
-    border: solid #4F7CAC;
-}
+#status-next-marker { width: 3; color: #D4B36A; }
+#status-next-text { width: 1fr; }
 
-#status-panel.-status-info #status-heading {
-    color: #4F7CAC;
-}
-
-#status-panel.-status-ok {
-    border: solid #C4A35A;
-}
-
-#status-panel.-status-ok #status-heading {
-    color: #C4A35A;
-}
-
-#status-panel.-status-warning {
-    border: solid #C9893A;
-}
-
-#status-panel.-status-warning #status-heading {
-    color: #C9893A;
-}
-
-#status-panel.-status-error {
-    border: solid #B54A4A;
-}
-
-#status-panel.-status-error #status-heading {
-    color: #B54A4A;
-}
+#status-panel.-status-info { border-left: tall #8FB4DC; }
+#status-panel.-status-info #status-heading { color: #8FB4DC; }
+#status-panel.-status-ok { border-left: tall #82B58F; }
+#status-panel.-status-ok #status-heading { color: #82B58F; }
+#status-panel.-status-warning { border-left: tall #D9A45B; }
+#status-panel.-status-warning #status-heading { color: #D9A45B; }
+#status-panel.-status-error { border-left: tall #D37C6E; }
+#status-panel.-status-error #status-heading { color: #D37C6E; }

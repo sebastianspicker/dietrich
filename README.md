@@ -1,85 +1,69 @@
 # Dietrich
 
-Dietrich is a local command-line application for inspecting document protection,
-removing non-cryptographic protection, and recovering open passwords on documents
-that you own or are authorized to modify. It supports Microsoft Office formats and
-PDF. An optional Textual interface exposes the same operations in a terminal.
+**The office picklock.**
 
-Version 0.4.0a5 is an alpha release. Command behavior, Python APIs, and output
-formats may change before a stable release.
+Dietrich is a local Python tool for documents you own or are authorized to
+modify. It inspects protection in Microsoft Office and PDF files, removes
+supported non-cryptographic restrictions, and recovers open passwords — all
+without sending your files anywhere.
 
-[Open the static interface demo](https://sebastianspicker.github.io/dietrich/).
-It uses sanitized sample data, cannot access local files, and labels every
-operation as simulated.
+[![CI](https://github.com/sebastianspicker/dietrich/actions/workflows/ci.yml/badge.svg)](https://github.com/sebastianspicker/dietrich/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](docs/ALPHA.md)
 
-Run the same static artifact locally from the repository root:
+You get a command-line interface, a local graphical interface, an optional
+Textual terminal interface, and a small Python API.
 
-```bash
-python3 -m http.server 8000 --directory site
-```
+> **0.4.0a5 is an alpha release.** Commands, Python APIs, and output formats can
+> still change before a stable release.
 
-Then open `http://127.0.0.1:8000/`. The demo uses relative asset paths and works
-under the `/dietrich/` repository subpath. It is hosted separately; this
-repository contains no deployment workflow for it.
+## Screenshot tour
 
-## Purpose and scope
+The graphical interface walks through four steps and runs the same Python
+operations as the CLI. Every document stays on your machine.
 
-Dietrich distinguishes between two protection layers:
+| | |
+| --- | --- |
+| ![Choose a local file](site/screenshots/01-choose.png) | ![Review detected restrictions and the output path](site/screenshots/02-review.png) |
+| **1 · Choose a file** — pick a local Office or PDF document. | **2 · Review restrictions** — choose what to remove and where to save. |
+| ![Validation checklist while the working copy is created](site/screenshots/03-processing.png) | ![Saved working copy with removal counts and warnings](site/screenshots/04-result.png) |
+| **3 · Validate and save** — the copy is reopened and checked before publication. | **4 · Read the result** — removal counts, warnings, and the saved path. |
 
-- Soft protection consists of editable document flags such as worksheet, workbook,
-  document, presentation, and PDF permission restrictions.
-- Open-password encryption requires a password or an offline recovery method before
-  the file can be read.
+The interface adapts to narrow screens too —
+[390&nbsp;px review capture](site/screenshots/05-review-mobile.png).
 
-The application works on local files. It does not provide a service, network API,
-database, functional browser interface, or rights-management license acquisition.
+Want to click through without installing anything? The
+[Instrument Workbench demo](https://sebastianspicker.github.io/dietrich/) is a
+static, fixture-only simulation of the terminal interface. It cannot select,
+upload, inspect, or change files, and it never runs Dietrich.
 
-## Current capabilities
+## What Dietrich does
 
-| Input | Supported operations |
-|---|---|
-| `.xlsx`, `.xlsm` | Inspect and remove worksheet, chartsheet, workbook, and package-property protection |
-| `.docx`, `.docm` | Inspect and remove document, write, and package-property protection |
-| `.pptx`, `.pptm` | Inspect and remove modification verifiers and package-property protection |
-| Encrypted Office files | Verify explicit passwords, search wordlists or masks, run bounded brute force, export hashes, or invoke a local `hashcat` executable |
-| `.xls`, `.doc` | Inspect and patch verified BIFF8/FIB protection fields without changing stream lengths |
-| `.ppt` | Inspect the container; rewriting is rejected until a verified record parser exists |
-| PDF | Inspect encryption and permissions, recover a user password, and write an unencrypted copy |
-| Signed OOXML | Reject by default, or create an unsigned copy with `--strip-signatures` |
+- Inspects OOXML, encrypted Office, legacy binary Office, and PDF inputs.
+- Removes supported worksheet, workbook, document, presentation, and PDF
+  permission restrictions.
+- Verifies passwords, runs bounded local candidate searches, exports recovery
+  hashes, or drives a separately installed `hashcat`.
+- Refuses rights-managed input and signed OOXML by default.
+- Creates a validated side-by-side working copy and leaves the source untouched.
 
-Additional options cover worksheet-only changes, preservation of selected
-verifiers, VBA project verifier clearing, JSON inspection output, and experimental
-OOXML mutation files for local compatibility research.
-
-## Limitations
-
-- Microsoft Purview, Azure RMS, and other IRM-protected files are detected and
-  rejected. Dietrich does not obtain or bypass use licenses.
-- Legacy binary support recognizes known records and uses equal-length stream
-  patches. It is not a general CFBF editor.
-- VBA verifier clearing is best effort and does not decrypt VBA source code.
-- Native PDF hash export supports the Standard security handler for revisions 2
-  through 6 when the required fields are present.
-- Re-signing is an experimental RSA/SHA-256 OOXML subset. It does not implement
-  the complete Office transform, timestamp, trust, or compatibility model.
-- Dietrich does not verify documents by opening them in Microsoft Office, LibreOffice,
-  or third-party PDF viewers.
-
-See [docs/ALPHA.md](docs/ALPHA.md) for the detailed support matrix.
+Support varies by format. Legacy `.ppt` mutation is unavailable, VBA verifier
+clearing and OOXML re-signing are experimental, and Dietrich does not acquire IRM
+licenses or verify how output looks in Microsoft Office, LibreOffice, or
+third-party PDF viewers. The [capability matrix](docs/ALPHA.md) lists exact
+coverage.
 
 ## Requirements
 
-- Python 3.11 or later. CI covers Python 3.11, 3.12, and 3.13.
-- `msoffcrypto-tool` for encrypted Office files.
-- `pikepdf` for PDF operations.
-- `olefile` for legacy binary Office files.
-- `cryptography` for re-signing.
-- `textual` for the terminal interface.
-- A separate `hashcat` executable on `PATH` when using `--hashcat`.
+- Python 3.11 or later. CI covers 3.11, 3.12, and 3.13 on Ubuntu.
+- Optional Python dependencies for the features you use:
+  `msoffcrypto-tool`, `pikepdf`, `olefile`, `cryptography`, and `textual`.
+- A separately installed `hashcat` executable on `PATH` for `--hashcat`.
 
-## Installation
+## Install
 
-Create a virtual environment and install from the repository:
+From a checkout, create a virtual environment and install the extras you need:
 
 ```bash
 python3 -m venv .venv
@@ -87,46 +71,28 @@ source .venv/bin/activate
 python -m pip install -e '.[full]'
 ```
 
-Install only the features you need by replacing `full` with one or more of
-`crypto`, `pdf`, `legacy`, `sign`, or `ui`.
+Swap `full` for one or more of `crypto`, `pdf`, `legacy`, `sign`, or `ui` to
+install only selected features. There is no PyPI package yet.
 
-For development:
+## Command line
 
-```bash
-python -m pip install -e '.[full,dev]'
-```
-
-The repository does not define a PyPI publication workflow. These instructions
-cover installation from a source checkout.
-
-## Configuration
-
-Dietrich has no application configuration file and defines no application
-environment variables. Operations are configured with command-line flags or the
-terminal interface.
-
-By default, an unlock command writes `NAME_unprotected.EXT` next to the input.
-Existing output files are rejected unless `--force` is supplied. Password search
-is bounded by `--max-candidates`, which defaults to 5,000,000 candidates.
-
-Run `dietrich --help` for the complete option list.
-
-## Usage
-
-Inspect a document without writing an output:
+Inspect a file without writing anything:
 
 ```bash
 dietrich report.xlsx --inspect
 dietrich report.xlsx --inspect --json
 ```
 
-Remove supported soft protection:
+Create an editable working copy:
 
 ```bash
 dietrich report.xlsx
 dietrich report.xlsx --output report_editable.xlsx
 dietrich report.xlsx --worksheets-only
 ```
+
+Output defaults to `NAME_unprotected.EXT` beside the input. An existing target
+is rejected unless you pass `--force`.
 
 Supply or search for an open password:
 
@@ -137,32 +103,59 @@ dietrich secret.xlsx --mask 'Office-?d?d?d?d'
 dietrich secret.xlsx --brute --charset digits --max-length 4
 ```
 
-Export a hash or invoke a local hashcat process:
+Candidate searches default to a ceiling of 5,000,000. Export a hash, or hand the
+job to a local `hashcat`:
 
 ```bash
 dietrich secret.xlsx --export-hash hashcat
 dietrich secret.xlsx --hashcat --wordlist passwords.txt
 ```
 
-Signed OOXML packages fail closed. To remove signature parts and create an
-unsigned working copy:
+Signed OOXML packages are refused by default. Stripping signatures produces an
+unsigned copy:
 
 ```bash
 dietrich signed.xlsx --strip-signatures --output unsigned.xlsx
 ```
 
-Start the terminal interface:
+Run `dietrich --help` for every option.
+
+## Graphical interface
+
+```bash
+dietrich-gui
+dietrich-gui report.xlsx
+```
+
+The local browser interface guides you through choosing a document, reviewing
+its restrictions, creating a separate working copy, and reading the validated
+result. Advanced controls cover password recovery, signature handling, VBA,
+re-signing, and hash export. Nothing is uploaded to a remote service.
+
+The launcher opens a session URL on `127.0.0.1`. Keep that URL private — it
+grants access to the local session. Use `--no-browser` to open it yourself, and
+press Ctrl+C in the launching terminal to stop after active-operation cleanup.
+Closing the tab does not stop the Python process. See the
+[graphical interface guide](docs/GUI.md) for details.
+
+## Terminal interface
+
+Install the `ui` or `full` extra, then run:
 
 ```bash
 dietrich --tui
 dietrich-tui report.xlsx
 ```
 
-The TUI uses `i` for inspection, `u` for unlock, `e` for hash export, `?` for
-help, and `q` to quit. Its recent-file list exists only for the current process.
+The TUI calls the same application operations as the CLI, and its recent-path
+list lives only for the current process. Keyboard commands: `i` inspect, `u`
+unlock, `e` export a hash, `Escape` cancel, `?` help, and `q` quit after cleanup.
+See the [terminal interface guide](docs/TUI.md) for details.
 
-The public Python API exports `inspect_document`, `unlock_document`,
-`inspect_workbook`, `unlock_workbook`, and `export_document_hash`:
+## Python API
+
+The supported top-level functions are `inspect_document`, `unlock_document`,
+`inspect_workbook`, `unlock_workbook`, and `export_document_hash`.
 
 ```python
 from pathlib import Path
@@ -173,103 +166,99 @@ report = inspect_document(Path("report.xlsx"))
 result = unlock_document(Path("report.xlsx"), Path("report_editable.xlsx"))
 ```
 
-## Repository structure
+All five functions accept an optional keyword-only `control=OperationControl()`.
+Use a fresh control for each operation. Another thread can call `control.cancel()`
+and poll its `phase` and `cancellation_requested` properties. An accepted request
+raises `OperationCancelledError` before publication; once publication begins,
+`cancel()` returns `False` and the caller waits for the result. Native calls
+finish before cancellation takes effect. Both types are exported from `dietrich`.
 
-| Path | Contents |
-|---|---|
-| `src/dietrich/domain/` | Typed assessment findings and unpublished-artifact records |
-| `src/dietrich/application/` | Assessment, recovery, hash export, and make-editable use cases |
-| `src/dietrich/dispatch.py` | Stable public-function facade |
+Internal format modules are not compatibility facades.
+
+## How it stays local and safe
+
+Dietrich has no remote service, database, or persistent state. It works on one
+document at a time and publishes a new file rather than editing the original.
+
+- Output defaults to a new sibling path, and `--force` is required to replace an
+  existing target.
+- Successful publication validates an unpublished candidate, writes a
+  mode-`0600` temporary file, and performs one atomic replace.
+- ZIP input is bounded: 10,000 members, 64 MiB per member, 512 MiB total, and a
+  100:1 compression ratio. Duplicate and encrypted entries are rejected.
+- The graphical interface serves a bundled frontend from an authenticated
+  loopback session; it has no upload route and no general file download.
+
+Read [SECURITY.md](SECURITY.md) for the full trust model.
+
+## Repository map
+
+| Path | Purpose |
+| --- | --- |
+| `src/dietrich/domain/` | Typed assessments and unpublished artifact records |
+| `src/dietrich/application/` | Assessment, recovery, hash-export, and make-editable use cases |
 | `src/dietrich/ooxml/` | OOXML inspection, encryption, signatures, and candidate writing |
 | `src/dietrich/pdf/` | PDF inspection, recovery, hash export, and candidate writing |
-| `src/dietrich/legacy/` | Legacy Office record transforms and candidate writing |
-| `src/dietrich/crypto/` | Bounded password candidates and controlled hashcat integration |
-| `src/dietrich/safety/` | Bounded container I/O and the sole artifact transaction |
-| `src/dietrich/tui/` | Textual interface and packaged styles |
-| `tests/` | Behavioral contracts, safety regressions, and dependency enforcement |
-| `examples/` | User-facing command examples |
-| `docs/` | Capability, strategy, and research references |
+| `src/dietrich/legacy/` | Verified legacy Office inspection and equal-length transforms |
+| `src/dietrich/crypto/` | Bounded password candidates and local hashcat integration |
+| `src/dietrich/safety/` | Bounded container access and the sole artifact transaction |
+| `src/dietrich/tui/` | Optional Textual adapter and packaged styles |
+| `src/dietrich/gui/` | Local graphical adapter and bundled browser assets |
+| `site/` | Separately deployable static mock-data simulation |
+| `tests/` | Behavioral, safety, architecture, and interface contracts |
 
-Focused references:
+The [architecture guide](docs/ARCHITECTURE.md) is the source of truth for
+component ownership, dependency direction, runtime flows, and safety invariants.
 
-- [Capability status](docs/ALPHA.md)
-- [Processing strategy](docs/STRATEGIES.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Terminal interface](docs/TUI.md)
-- [Release and distribution](docs/RELEASE.md)
+## Development
 
-## Development workflow
-
-Keep cross-format sequencing in `application/`, document semantics in the matching
-format package, and final publication in `safety/artifact_transaction.py`. The CLI
-and TUI translate user input into the same application calls.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for coding and review requirements.
-
-## Testing
-
-Run the repository checks from the project root:
+Install the locked development environment:
 
 ```bash
-uv run ruff check src tests examples
-uv run ruff format --check src tests examples
-uv run pyright
-uv run pytest -q
+uv sync --locked --all-extras
 ```
 
-CI synchronizes the committed lockfile and runs Ruff lint/format, Pyright, pytest,
-and an offline distribution build on Python 3.11 through 3.13.
+Run the repository gate from the root:
 
-## Deployment and operation
+```bash
+uv lock --check --offline
+uv run ruff check src tests examples scripts site/tests
+uv run ruff format --check src tests examples scripts site/tests
+uv run pyright
+uv run pytest -q --tb=short
+```
 
-Dietrich is operated as a local Python package. The repository contains no server
-deployment, container definition, hosted runtime, or publication job. The
-Hatchling configuration in `pyproject.toml` defines editable and wheel packaging,
-including the Textual style files.
-
-Work on copies of important documents. Successful output publication validates an
-unpublished candidate, writes the final file with mode `0600`, and refuses
-replacement unless `--force` is explicit.
+The release gate also builds source and wheel distributions offline. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for change requirements and
+[docs/RELEASE.md](docs/RELEASE.md) for distribution and Pages deployment.
 
 ## Troubleshooting
 
-Exit codes are:
-
-| Code | Meaning |
-|---|---|
+| Exit code | Meaning |
+| ---: | --- |
 | 0 | Operation completed |
 | 1 | Password search exhausted without a match |
-| 2 | Invalid arguments, unsupported input, unsafe archive, output collision, or another operation error |
+| 2 | Invalid arguments, unsupported or unsafe input, an output collision, or another operation error |
 | 3 | A required optional dependency is not installed |
 
-Common failures:
-
-- `Missing optional dependency`: install the relevant project extra.
-- Output already exists: choose another `--output` path or use `--force` after
-  confirming replacement is safe.
-- `hashcat` is unavailable: install it separately and confirm `hashcat` resolves
-  on `PATH`.
-- IRM detection: open the document with an account that has a valid use license.
+- Missing optional dependency? Install the matching project extra.
+- `hashcat` not found? Install it separately and confirm it is on `PATH`.
+- Output collision? Choose another path, or use `--force` after checking the
+  target.
+- IRM-protected input needs a valid license in an authorized application, so
   Dietrich cannot process it.
-- Unsafe archive rejection: inspect the input for duplicate, encrypted, oversized,
-  or excessively compressed ZIP entries. Dietrich does not bypass these checks.
+- Unsafe archives are rejected rather than processed with relaxed limits.
 
-## Security considerations
+## Security and research
 
-Use Dietrich only on authorized documents. Password lists, exported hashes,
-decrypted outputs, unsigned copies, certificates, and private keys are sensitive
-files. Restrict their permissions and remove temporary material when it is no
-longer required.
+Work on copies of important documents. Decrypted output, unsigned copies,
+password lists, exported hashes, certificates, and private keys are all
+sensitive. Trust boundaries and vulnerability reporting live in
+[SECURITY.md](SECURITY.md).
 
-Stripping signatures removes authenticity evidence. Re-signing does not establish
-trust by itself. Validate important output with the intended document application
-before relying on it.
-
-Archive processing rejects more than 10,000 members, members over 64 MiB, total
-uncompressed content over 512 MiB, compression ratios over 100:1, duplicate
-entries, and encrypted entries.
-
-See [SECURITY.md](SECURITY.md) for vulnerability reporting guidance.
+Focused notes cover [legacy binary Office](docs/research/LEGACY_BINARY.md),
+[OOXML signatures](docs/research/SIGNATURES.md), and
+[OOXML mutation research](docs/research/VIEWER_ROBUSTNESS.md).
 
 ## License
 

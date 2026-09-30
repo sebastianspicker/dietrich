@@ -7,6 +7,7 @@ from pathlib import Path
 
 from dietrich.errors import EncryptedDocumentError, InvalidDocumentError, MissingDependencyError
 from dietrich.external_tools import run_pdf2john_sync
+from dietrich.operation import checkpoint
 
 
 def _require_pikepdf():
@@ -22,6 +23,7 @@ def _require_pikepdf():
 
 def try_password(path: Path, password: str) -> bool:
     """True if pikepdf can open the PDF with the password."""
+    checkpoint("verifying PDF password")
     pikepdf = _require_pikepdf()
     try:
         with pikepdf.open(path, password=password or ""):
@@ -30,11 +32,14 @@ def try_password(path: Path, password: str) -> bool:
         return False
     except (OSError, pikepdf.PdfError, TypeError, ValueError):
         return False
+    finally:
+        checkpoint()
 
 
 def export_hash_line(path: Path, fmt: str = "hashcat") -> str:
     """Export a crackable PDF hash (native first, pdf2john fallback)."""
     path = Path(path)
+    checkpoint("exporting PDF hash")
     try:
         return _native_hash_line(path, fmt)
     except (EncryptedDocumentError, InvalidDocumentError, OSError, TypeError, ValueError) as exc:
@@ -57,6 +62,7 @@ def _pdf2john_hash_line(path: Path, fmt: str) -> str | None:
     executable = shutil.which("pdf2john.pl") or shutil.which("pdf2john")
     if executable is None:
         return None
+    checkpoint("running pdf2john")
     try:
         process = run_pdf2john_sync(executable, path, timeout=60)
     except (OSError, TimeoutError):

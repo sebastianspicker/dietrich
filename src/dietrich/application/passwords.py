@@ -3,22 +3,34 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from dietrich.crypto.attack import AttackOptions, run_file_attack
 from dietrich.domain.models import UnlockOptions
 from dietrich.errors import EncryptedDocumentError, PasswordNotFoundError
+from dietrich.operation import checkpoint
+
+if TYPE_CHECKING:
+    from dietrich.domain.models import DocumentInspection
 
 
-def recover_office_password(source: Path, options: UnlockOptions) -> str:
+def recover_office_password(
+    source: Path,
+    options: UnlockOptions,
+    *,
+    inspection: DocumentInspection | None = None,
+) -> str:
     """Resolve an Office open password from explicit or configured local sources."""
     from dietrich.ooxml import encryption
 
+    checkpoint("recovering password")
     if options.password is not None:
         if encryption.try_password(source, options.password):
+            checkpoint()
             return options.password
         raise EncryptedDocumentError("provided password is incorrect.")
     if options.use_hashcat:
-        return _recover_via_hashcat(source, options, kind="office")
+        return _recover_via_hashcat(source, options, inspection=inspection)
     if not any([options.wordlist, options.mask, options.charset]):
         raise EncryptedDocumentError(
             "Encrypted Office file requires --password, --wordlist, --mask, --brute, or --hashcat."
@@ -26,16 +38,23 @@ def recover_office_password(source: Path, options: UnlockOptions) -> str:
     return _run_local_attack(source, options, kind="ooxml")
 
 
-def recover_pdf_password(source: Path, options: UnlockOptions) -> str:
+def recover_pdf_password(
+    source: Path,
+    options: UnlockOptions,
+    *,
+    inspection: DocumentInspection | None = None,
+) -> str:
     """Resolve a PDF user password from explicit or configured local sources."""
     from dietrich.pdf import recovery
 
+    checkpoint("recovering password")
     if options.password is not None:
         if recovery.try_password(source, options.password):
+            checkpoint()
             return options.password
         raise EncryptedDocumentError("provided PDF password is incorrect.")
     if options.use_hashcat:
-        return _recover_via_hashcat(source, options, kind="pdf")
+        return _recover_via_hashcat(source, options, inspection=inspection)
     if not any([options.wordlist, options.mask, options.charset]):
         raise EncryptedDocumentError(
             "Encrypted PDF requires --password, --wordlist, --mask, --brute, or --hashcat."
@@ -82,16 +101,25 @@ def _verified_password(path: Path, password: str, verifier) -> str | None:
         return None
 
 
-def _recover_via_hashcat(source: Path, options: UnlockOptions, *, kind: str) -> str:
+def _recover_via_hashcat(
+    source: Path,
+    options: UnlockOptions,
+    *,
+    inspection: DocumentInspection | None,
+) -> str:
     from dietrich.crypto.hashcat_runner import run_hashcat, suggest_mode_from_hash
 
     if not (options.wordlist or options.mask or options.hashcat_args):
         raise EncryptedDocumentError(
             "--hashcat requires --wordlist, --mask, or --hashcat-arg (attack material)."
         )
-    from dietrich.application.hash_export import export_document_hash
+    from dietrich.application.hash_export import export_assessed_hash, export_document_hash
 
-    hash_line = export_document_hash(source, "hashcat")
+    hash_line = (
+        export_document_hash(source, "hashcat")
+        if inspection is None
+        else export_assessed_hash(source, inspection, "hashcat")
+    )
     mode = suggest_mode_from_hash(hash_line)
     result = run_hashcat(
         hash_line,

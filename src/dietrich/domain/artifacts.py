@@ -29,6 +29,7 @@ class CandidateArtifact:
     vba_project_present: bool = False
     password_used: str | None = None
     warnings: tuple[str, ...] = ()
+    result_document_format: DocumentFormat | None = None
 
 
 __all__ = ["ArtifactKind", "CandidateArtifact"]

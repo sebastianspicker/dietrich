@@ -7,6 +7,7 @@ from pathlib import Path
 from dietrich.domain.artifacts import ArtifactKind, CandidateArtifact
 from dietrich.domain.models import DocumentFormat, RemovalCounts, UnlockOptions
 from dietrich.errors import EncryptedDocumentError, InvalidDocumentError, MissingDependencyError
+from dietrich.operation import checkpoint
 
 
 def write_pdf_candidate(
@@ -21,10 +22,12 @@ def write_pdf_candidate(
     source = Path(source)
     candidate_path = Path(candidate_path)
     _require_distinct_candidate(source, candidate_path)
+    checkpoint("writing PDF candidate")
 
     password = options.password or ""
     stripped = _save_unrestricted_pdf(pikepdf, source, candidate_path, password, options)
     _validate_pdf_candidate(pikepdf, candidate_path)
+    checkpoint()
 
     warnings = ("PDF encryption/restrictions removed from working copy.",) if stripped else ()
     return CandidateArtifact(
@@ -67,6 +70,8 @@ def _save_unrestricted_pdf(
         raise EncryptedDocumentError(
             "PDF requires a user password. Pass --password / --wordlist / --mask."
         ) from exc
+    finally:
+        checkpoint()
     return int(was_encrypted)
 
 

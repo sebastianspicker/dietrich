@@ -7,12 +7,15 @@ import shutil
 import tempfile
 import zipfile
 from collections.abc import Callable
+from contextvars import Token
 from pathlib import Path
 
 from dietrich.domain.artifacts import ArtifactKind, CandidateArtifact
 from dietrich.errors import InvalidDocumentError, OutputExistsError
+from dietrich.operation import checkpoint, current_control
 from dietrich.safety.publish import publish_output, temporary_output_path
-from dietrich.safety.zip_archive import validate_archive_safety
+from dietrich.safety.snapshot import begin_snapshots, end_snapshots, register_snapshot
+from dietrich.safety.zip_archive import validate_archive_safety, verify_archive_crc
 
 
 class ArtifactTransaction:
@@ -24,6 +27,7 @@ class ArtifactTransaction:
         self.mode = mode
         self._workspace: tempfile.TemporaryDirectory[str] | None = None
         self._counter = 0
+        self._snapshot_token: Token | None = None
 
     def __enter__(self) -> ArtifactTransaction:
         if self.target.exists() and not self.overwrite:
@@ -31,11 +35,16 @@ class ArtifactTransaction:
         self._workspace = tempfile.TemporaryDirectory(
             prefix=f".{self.target.name}.work.", dir=self.target.parent
         )
+        self._snapshot_token = begin_snapshots()
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:
-        if self._workspace is not None:
-            self._workspace.cleanup()
+        try:
+            if self._workspace is not None:
+                self._workspace.cleanup()
+        finally:
+            if self._snapshot_token is not None:
+                end_snapshots(self._snapshot_token)
 
     def candidate_path(self, suffix: str = ".bin") -> Path:
         """Allocate a unique path inside the private transaction workspace."""
@@ -46,9 +55,12 @@ class ArtifactTransaction:
 
     def snapshot_source(self, source: Path) -> Path:
         """Copy one input into the private workspace for stable repeated parsing."""
+        checkpoint("snapshotting")
         snapshot = self.candidate_path(Path(source).suffix or ".bin")
         shutil.copyfile(source, snapshot)
         os.chmod(snapshot, self.mode)
+        register_snapshot(snapshot)
+        checkpoint()
         return snapshot
 
     def commit(
@@ -58,13 +70,19 @@ class ArtifactTransaction:
         validate_semantics: Callable[[CandidateArtifact], None],
     ) -> None:
         """Validate, make private, and atomically publish one candidate."""
+        checkpoint("validating identity")
         validate_semantics(artifact)
+        checkpoint("validating output")
         validate_candidate(artifact)
         with temporary_output_path(self.target) as adjacent:
             shutil.copyfile(artifact.path, adjacent)
             os.chmod(adjacent, self.mode)
             with adjacent.open("rb") as stream:
                 os.fsync(stream.fileno())
+            checkpoint("ready to publish")
+            control = current_control()
+            if control is not None:
+                control.begin_publication()
             publish_output(adjacent, self.target, overwrite=self.overwrite)
         _fsync_directory(self.target.parent)
 
@@ -89,7 +107,7 @@ def _validate_ooxml(path: Path) -> None:
     try:
         with zipfile.ZipFile(path) as archive:
             validate_archive_safety(archive, allow_signed=True)
-            failed_member = archive.testzip()
+            failed_member = verify_archive_crc(archive)
     except zipfile.BadZipFile as exc:
         raise InvalidDocumentError(f"written package is not a valid ZIP: {exc}") from exc
     if failed_member is not None:

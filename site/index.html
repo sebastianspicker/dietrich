@@ -3,115 +3,283 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Static, non-operational demonstration of the Dietrich terminal interface.">
-    <meta name="theme-color" content="#12161c">
-    <title>Dietrich · static interface demo</title>
+    <meta name="description" content="Static, fixture-only Instrument Workbench demonstration of the Dietrich terminal interface.">
+    <meta name="theme-color" content="#0f141a">
+    <title>Dietrich · Instrument Workbench demo</title>
     <link rel="stylesheet" href="styles.css">
     <script src="script.js" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#workbench">Skip to demo</a>
-    <header class="brand-row">
-      <div>
-        <p class="brand-name">⌁&nbsp; DIETRICH</p>
-        <p class="brand-subtitle">the office picklock · authorized use only</p>
+
+    <header class="topbar">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <circle cx="12.5" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2.4"/>
+          <path d="M17 15.5 L26 24.5 M22.5 21 l2.6 -2.6 M25 23.5 l2.2 -2.2" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+        </svg>
+        <div class="brand-text">
+          <span class="brand-name">Dietrich</span>
+          <span class="brand-tagline">the office picklock</span>
+        </div>
       </div>
-      <p class="brand-meta">ALPHA 0.4.0a5 · STATIC DEMO</p>
+      <div class="topbar-meta">
+        <span class="chip chip--quiet">ALPHA 0.4.0a5</span>
+        <span class="chip chip--demo">Static demo</span>
+      </div>
     </header>
 
-    <aside class="demo-notice" aria-label="Simulation notice">
-      <strong>SIMULATION ONLY</strong>
-      <span>This page uses sanitized fixture names. It cannot access, inspect, change, or upload files.</span>
-      <a href="https://github.com/sebastianspicker/dietrich">View source</a>
-    </aside>
+    <div class="notice" role="note" aria-label="Simulation notice">
+      <svg class="notice-icon" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M8 1.5 15 14 H1 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="M8 6.2v3.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <circle cx="8" cy="11.8" r="0.9" fill="currentColor"/>
+      </svg>
+      <p><strong>Simulation only.</strong> Sanitized fixture names — this page cannot access, inspect, change, or upload files.</p>
+      <a class="notice-link" href="https://github.com/sebastianspicker/dietrich">View source</a>
+    </div>
 
-    <div class="authorized-plaque">
-      AUTHORIZED USE ONLY · Documents you own or may modify · Soft locks ≠ encryption · IRM / Purview requires a valid license
+    <div class="plaque" role="note" aria-label="Authorized use">
+      <span class="plaque-seal" aria-hidden="true">§</span>
+      <p>Authorized use only — documents you own or may modify. Soft locks are not encryption. IRM&nbsp;/&nbsp;Purview requires a valid license.</p>
     </div>
 
     <main class="workbench" id="workbench">
-      <nav class="session-rail" aria-label="Sanitized demo fixtures">
-        <p class="rail-heading">SESSION · fixtures</p>
-        <div class="fixture-list" role="list">
-          <button class="fixture is-selected" type="button" data-fixture="soft" aria-pressed="true">
-            <span>board_report.xlsx</span>
-            <small>worksheet locks</small>
-          </button>
-          <button class="fixture" type="button" data-fixture="signed" aria-pressed="false">
-            <span>signed_budget.xlsx</span>
-            <small>signed package</small>
-          </button>
-          <button class="fixture" type="button" data-fixture="encrypted" aria-pressed="false">
-            <span>vault_notes.xlsx</span>
-            <small>open password</small>
-          </button>
-          <button class="fixture" type="button" data-fixture="pdf" aria-pressed="false">
-            <span>permissions.pdf</span>
-            <small>owner restrictions</small>
-          </button>
+      <nav class="rail" aria-label="Sanitized demo fixtures">
+        <div class="rail-head">
+          <h2 class="rail-title">Session</h2>
+          <span class="rail-count" id="rail-count">4 fixtures</span>
         </div>
-        <p class="rail-foot"><span aria-hidden="true">●</span> ready · no network</p>
+        <div class="fixture-list" role="group" aria-label="Fixtures" id="fixture-list"></div>
+        <div class="rail-foot">
+          <span class="dot dot--ok" aria-hidden="true"></span>
+          <span id="rail-status">Ready · no network</span>
+        </div>
       </nav>
 
-      <section class="main-column" aria-label="Dietrich click-through simulation">
-        <p class="section-label">DOCUMENT</p>
-        <div class="path-row">
-          <div class="path-display" id="input-path">fixtures/board_report.xlsx</div>
-          <span class="file-kind" id="file-kind">XLSX</span>
-          <button class="action inspect-action" type="button" id="inspect">Inspect <small>SIMULATED</small></button>
-        </div>
+      <section class="bench" aria-label="Dietrich click-through simulation">
 
-        <section class="dossier state-info" id="dossier" aria-live="polite" aria-atomic="true">
-          <div class="dossier-header">
-            <h1 id="dossier-heading">READY TO INSPECT</h1>
-            <p id="dossier-meta">SIGNED&nbsp; -<br>IRM GATE&nbsp; ACTIVE</p>
+        <section class="block" aria-labelledby="doc-label">
+          <div class="block-head">
+            <h2 class="block-label" id="doc-label">Document</h2>
           </div>
-          <p id="dossier-body">Choose a sanitized fixture, then run the simulated inspection.<br>Next · Inspect the selected fixture.</p>
+          <div class="intake">
+            <div class="path-field">
+              <span class="path-value" id="input-path">fixtures/board_report.xlsx</span>
+              <span class="chip chip--format" id="file-kind">XLSX</span>
+            </div>
+            <button class="btn btn--signal" type="button" id="inspect">
+              Inspect
+              <kbd>I</kbd>
+            </button>
+          </div>
         </section>
 
-        <p class="section-label">OUTPUT</p>
-        <div class="output-row">
-          <div class="path-display" id="output-path">fixtures/board_report_unprotected.xlsx</div>
-          <label class="overwrite-control">
-            <input type="checkbox" id="overwrite">
-            <span>OVERWRITE <small>SIMULATED</small></span>
-            <em>Preserve original · side-by-side by default</em>
-          </label>
-          <button class="action unlock-action" type="button" id="unlock">Unlock working copy <small>SIMULATED</small></button>
-        </div>
+        <section class="dossier" id="dossier" aria-live="polite" aria-atomic="true" data-state="idle">
+          <div class="dossier-head">
+            <div class="dossier-titles">
+              <span class="status-pill" id="status-pill">Idle</span>
+              <h1 class="dossier-heading" id="dossier-heading">Ready to inspect</h1>
+            </div>
+            <dl class="dossier-meta">
+              <div><dt>Signed</dt><dd id="meta-signed">—</dd></div>
+              <div><dt>IRM gate</dt><dd id="meta-irm">active</dd></div>
+            </dl>
+          </div>
+          <p class="dossier-lede" id="dossier-lede">Choose a sanitized fixture, then run the simulated inspection.</p>
+          <dl class="findings" id="findings" hidden></dl>
+          <p class="next-step" id="next-step">
+            <span class="next-step-marker" aria-hidden="true">→</span>
+            <span id="next-step-text">Inspect the selected fixture.</span>
+          </p>
+        </section>
 
-        <div class="utility-row">
-          <details class="advanced">
-            <summary>Advanced · password · wordlist · signatures · hashcat <small>SIMULATED</small></summary>
-            <div class="advanced-fields">
-              <label>Password <input type="password" value="demo-only" aria-label="Simulated password"></label>
-              <label><input type="checkbox" id="strip-signatures"> Strip signatures</label>
-              <label><input type="checkbox"> Soft-only</label>
-              <label><input type="checkbox"> Unlock VBA</label>
-              <p>No values leave this page or invoke Dietrich.</p>
+        <section class="block" aria-labelledby="out-label">
+          <div class="block-head">
+            <h2 class="block-label" id="out-label">Output</h2>
+            <span class="block-hint">Original preserved · side-by-side by default</span>
+          </div>
+          <div class="intake">
+            <div class="path-field path-field--output">
+              <span class="path-value" id="output-path">fixtures/board_report_unprotected.xlsx</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="overwrite">
+              <span class="switch-track" aria-hidden="true"></span>
+              <span class="switch-label">Overwrite</span>
+            </label>
+            <button class="btn btn--primary" type="button" id="unlock">
+              Unlock working copy
+              <kbd>U</kbd>
+            </button>
+          </div>
+        </section>
+
+        <div class="utility">
+          <details class="advanced" id="advanced">
+            <summary>
+              <span>Advanced</span>
+              <span class="advanced-hint">password · wordlist · mask · signatures · hashcat</span>
+            </summary>
+            <div class="advanced-grid">
+              <label class="field">
+                <span class="field-label">Password</span>
+                <input class="field-input" type="password" value="demo-only" aria-label="Simulated password">
+              </label>
+              <label class="field">
+                <span class="field-label">Wordlist</span>
+                <input class="field-input" type="text" placeholder="passwords.txt" aria-label="Simulated wordlist path">
+              </label>
+              <label class="field">
+                <span class="field-label">Mask</span>
+                <input class="field-input" type="text" placeholder="Office-?d?d?d?d" aria-label="Simulated mask">
+              </label>
+              <fieldset class="flags">
+                <legend class="field-label">Flags</legend>
+                <label class="check"><input type="checkbox" id="strip-signatures"><span>Strip signatures</span></label>
+                <label class="check"><input type="checkbox"><span>Soft-only</span></label>
+                <label class="check"><input type="checkbox"><span>Unlock VBA</span></label>
+                <label class="check"><input type="checkbox"><span>Use hashcat</span></label>
+              </fieldset>
+              <p class="advanced-note">No values leave this page or invoke Dietrich.</p>
             </div>
           </details>
-          <button class="action secondary-action" type="button" id="export">Export hash <small>SIMULATED</small></button>
-          <button class="action secondary-action" type="button" id="reset">Reset demo</button>
+          <div class="utility-actions">
+            <button class="btn btn--ghost" type="button" id="export">Export hash <kbd>E</kbd></button>
+            <button class="btn btn--ghost" type="button" id="reset">Reset demo <kbd>R</kbd></button>
+          </div>
         </div>
 
-        <section class="activity-panel" aria-labelledby="activity-heading">
-          <div class="activity-header">
-            <h2 class="section-label" id="activity-heading">ACTIVITY</h2>
-            <span id="session-state">READY</span>
+        <section class="activity" aria-labelledby="activity-heading">
+          <div class="activity-head">
+            <h2 class="block-label" id="activity-heading">Activity</h2>
+            <span class="session-state" id="session-state">Ready</span>
           </div>
-          <ol class="activity-log" id="activity-log" aria-live="polite">
-            <li><time>00:00:00</time> demo ready · fixture data only · no commands run</li>
+          <ol class="log" id="activity-log" aria-live="polite">
+            <li class="log-entry log-entry--muted"><time>00:00:00</time><span>Demo ready · fixture data only · no commands run</span></li>
           </ol>
         </section>
+
+        <section class="tour" aria-labelledby="tour-heading">
+          <div class="block-head">
+            <h2 class="block-label" id="tour-heading">Screenshot tour</h2>
+            <span class="block-hint">Real local app · not this simulation</span>
+          </div>
+          <p class="tour-lede">
+            These captures show the bundled <code>dietrich-gui</code> desktop interface working on a
+            synthetic workbook with three worksheet locks and one workbook lock. The page above is a
+            separate, fixture-only simulation. The images are static: they run no commands and change
+            nothing.
+          </p>
+          <ol class="tour-grid">
+            <li class="tour-step">
+              <figure class="tour-shot">
+                <img
+                  src="screenshots/01-choose.png"
+                  width="1536"
+                  height="1024"
+                  decoding="async"
+                  alt="Dietrich graphical interface, step 1, Make a document editable: pixel-art brass padlock and lockpicks beside a document, a Choose local file button, and an Enter a file path option, with a note that processing stays on this computer.">
+                <figcaption class="tour-caption">
+                  <span class="tour-index" aria-hidden="true">1</span>
+                  <span class="tour-text"><strong>Choose a file</strong>Pick a local Office or PDF document. Nothing is uploaded.</span>
+                </figcaption>
+              </figure>
+            </li>
+            <li class="tour-step">
+              <figure class="tour-shot">
+                <img
+                  src="screenshots/02-review.png"
+                  width="1536"
+                  height="1088"
+                  decoding="async"
+                  alt="Dietrich graphical interface, step 2, Review your working copy: budget-planning.xlsx with no open password or package signature, checkboxes for removing three worksheet and one workbook protection element, and an output file name and folder field.">
+                <figcaption class="tour-caption">
+                  <span class="tour-index" aria-hidden="true">2</span>
+                  <span class="tour-text"><strong>Review restrictions</strong>Choose what to remove and where the copy is saved.</span>
+                </figcaption>
+              </figure>
+            </li>
+            <li class="tour-step">
+              <figure class="tour-shot">
+                <img
+                  src="screenshots/03-processing.png"
+                  width="1536"
+                  height="1024"
+                  decoding="async"
+                  alt="Dietrich graphical interface, step 3, Checking the working copy: a checklist shows source assessment and apply changes complete, validate output in progress, and save working copy pending, with a Cancel button.">
+                <figcaption class="tour-caption">
+                  <span class="tour-index" aria-hidden="true">3</span>
+                  <span class="tour-text"><strong>Validate and save</strong>The copy is reopened and checked before it is published.</span>
+                </figcaption>
+              </figure>
+            </li>
+            <li class="tour-step">
+              <figure class="tour-shot">
+                <img
+                  src="screenshots/04-result.png"
+                  width="1536"
+                  height="1024"
+                  decoding="async"
+                  alt="Dietrich graphical interface, step 4, Working copy saved: budget-planning_unprotected.xlsx, with three worksheet and one workbook protection element removed, the source file unchanged, and file validation completed.">
+                <figcaption class="tour-caption">
+                  <span class="tour-index" aria-hidden="true">4</span>
+                  <span class="tour-text"><strong>Read the result</strong>Removal counts, warnings, and the saved path. The source stays unchanged.</span>
+                </figcaption>
+              </figure>
+            </li>
+            <li class="tour-step tour-step--wide">
+              <figure class="tour-shot">
+                <img
+                  src="screenshots/05-review-mobile.png"
+                  width="390"
+                  height="1403"
+                  decoding="async"
+                  alt="The same review screen at a narrow 390-pixel width, with the file summary, protection checkboxes, file name and folder fields, and the Back and Create working copy buttons stacked vertically.">
+                <figcaption class="tour-caption">
+                  <span class="tour-index" aria-hidden="true">5</span>
+                  <span class="tour-text">
+                    <strong>Narrow layout</strong>
+                    The same review and save flow at 390&nbsp;px. At small widths the form and
+                    destination controls stack, full paths wrap, and every control keeps a visible
+                    label and focus ring.
+                  </span>
+                </figcaption>
+              </figure>
+            </li>
+          </ol>
+        </section>
+
       </section>
     </main>
 
-    <footer class="key-footer" aria-label="Demo shortcuts">
-      <span><kbd>I</kbd> Inspect <small>SIMULATED</small></span>
-      <span><kbd>U</kbd> Unlock <small>SIMULATED</small></span>
-      <span><kbd>E</kbd> Export hash <small>SIMULATED</small></span>
-      <span><kbd>R</kbd> Reset</span>
+    <footer class="keybar" aria-label="Demo shortcuts">
+      <span class="key-hint"><kbd>I</kbd> Inspect</span>
+      <span class="key-hint"><kbd>U</kbd> Unlock</span>
+      <span class="key-hint"><kbd>E</kbd> Export hash</span>
+      <span class="key-hint"><kbd>R</kbd> Reset</span>
+      <span class="key-hint"><kbd>?</kbd> Help</span>
     </footer>
+
+    <dialog class="help" id="help" aria-labelledby="help-title">
+      <h2 id="help-title">About this demo</h2>
+      <p>
+        This is a static click-through of the Dietrich terminal interface. Every action is
+        simulated against sanitized fixtures — nothing is read, written, or sent anywhere.
+      </p>
+      <p>
+        The real application is a local CLI and Textual TUI for inspecting document
+        protection, removing soft locks, and recovering open passwords on documents you
+        are authorized to modify.
+      </p>
+      <ul>
+        <li><strong>Soft locks</strong> — editable flags; removed side-by-side, original untouched.</li>
+        <li><strong>Open passwords</strong> — verified explicitly or recovered with bounded, local methods.</li>
+        <li><strong>IRM / Purview</strong> — always fails closed; a valid license is required.</li>
+      </ul>
+      <form method="dialog">
+        <button class="btn btn--primary" type="submit">Close</button>
+      </form>
+    </dialog>
   </body>
 </html>

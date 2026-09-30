@@ -20,17 +20,21 @@ HELP_EPILOG = (
     "require a valid license and are not modified."
 )
 
-NIGHT_SLATE = "#12161C"  # canvas / background
-BENCH_IRON = "#1B222C"  # surface / panel
-DRAWER = "#252E3A"  # raised / input fill (CSS-only)
-COLD_SEAM = "#3A4656"  # hairline / border (CSS-only)
-PAPER_GRAY = "#D7DDE6"  # body ink / foreground
-FILING = "#8B97A8"  # mute / secondary ink (CSS-only)
-OXIDIZED_BRASS = "#C4A35A"  # Action → Textual primary (Unlock)
-STAMP_BLUE = "#4F7CAC"  # Signal → Textual secondary + accent (Inspect / plaque)
-OIL_GREEN = "#5F8F6B"  # success
-AMBER_KEY = "#C9893A"  # warning
-SEAL_RED = "#B54A4A"  # error
+NIGHT_SLATE = "#0F141A"  # canvas / background
+BENCH_IRON = "#151B23"  # surface / panel
+DRAWER = "#1C242F"  # raised / input fill (CSS-only)
+OVERLAY = "#232D3A"  # selected / nested surface (CSS-only)
+COLD_SEAM = "#2A3442"  # hairline / border (CSS-only)
+PAPER_GRAY = "#E4E9F0"  # body ink / foreground
+FILING = "#9AA6B6"  # mute / secondary ink (CSS-only)
+FILING_FAINT = "#8896A9"  # tertiary ink (CSS-only)
+OXIDIZED_BRASS = "#D4B36A"  # action text / primary
+BRASS_FILL = "#C4A35A"  # primary action fill (CSS-only)
+STAMP_BLUE = "#8FB4DC"  # signal / inspection accent
+SIGNAL_FILL = "#35587E"  # signal fill (CSS-only)
+OIL_GREEN = "#82B58F"  # success
+AMBER_KEY = "#D9A45B"  # warning
+SEAL_RED = "#D37C6E"  # error
 COOL_LEDGER = "#E8ECF1"  # light canvas (docs optional)
 CARBON = "#1A1F27"  # light ink (docs optional)
 

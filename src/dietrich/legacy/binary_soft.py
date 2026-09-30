@@ -14,6 +14,7 @@ from pathlib import Path
 from dietrich.domain.artifacts import ArtifactKind, CandidateArtifact
 from dietrich.domain.models import DocumentFormat, RemovalCounts, UnlockOptions
 from dietrich.errors import InvalidDocumentError, UnsupportedFormatError
+from dietrich.operation import checkpoint
 from dietrich.safety.cfb import patch_streams, read_streams
 
 # BIFF record types related to protection (Excel)
@@ -41,6 +42,7 @@ def write_legacy_candidate(
     source = Path(source)
     candidate_path = Path(candidate_path)
     _require_distinct_candidate(source, candidate_path)
+    checkpoint("reading legacy Office streams")
 
     try:
         streams = read_streams(source)
@@ -48,6 +50,8 @@ def write_legacy_candidate(
         raise InvalidDocumentError(f"{source} is not a readable OLE/CFB file: {exc}") from exc
 
     patches, counts = _build_patches(source, streams)
+    del streams
+    checkpoint("writing legacy Office candidate")
 
     if not patches:
         # Still provide a candidate so the application can publish uniformly.
@@ -66,6 +70,7 @@ def write_legacy_candidate(
         read_streams(candidate_path)
     except (ImportError, OSError, ValueError) as exc:
         raise InvalidDocumentError(f"patched OLE failed validation: {exc}") from exc
+    checkpoint()
 
     return CandidateArtifact(
         path=candidate_path,

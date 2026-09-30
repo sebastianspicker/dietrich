@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
+from textual.widget import Widget
 from textual.widgets import (
     Button,
     Checkbox,
@@ -16,12 +20,15 @@ from textual.widgets import (
     Log,
     OptionList,
     Static,
+    TextArea,
 )
 from textual.widgets.option_list import Option
+from textual.worker import Worker
 
 from dietrich.brand import PRODUCT_NAME, SUBTITLE
 from dietrich.dispatch import export_document_hash, inspect_document, unlock_document
 from dietrich.domain.models import DocumentInspection, UnlockOptions, UnlockResult
+from dietrich.operation import OperationControl
 from dietrich.tui.compose import compose_app
 from dietrich.tui.dossier import (
     DossierView,
@@ -38,7 +45,13 @@ from dietrich.tui.options_map import (
     validate_and_build,
 )
 from dietrich.tui.session_history import RecentSession, note_from_inspection
-from dietrich.tui.tasks import export_hash_message, export_hash_task, inspect_task, unlock_task
+from dietrich.tui.tasks import (
+    TaskResult,
+    export_hash_message,
+    export_hash_task,
+    inspect_task,
+    unlock_task,
+)
 from dietrich.tui.theme import register_dietrich_theme
 
 _STYLE_FILES = (
@@ -51,6 +64,15 @@ _STYLE_FILES = (
 )
 
 
+@dataclass
+class ActiveOperation:
+    """One backend lifetime, including cancellation and cleanup."""
+
+    identifier: int
+    control: OperationControl
+    worker: Worker[None] | None = None
+
+
 class DietrichApp(App[None]):
     """Full-screen Dietrich picklock UI."""
 
@@ -60,6 +82,7 @@ class DietrichApp(App[None]):
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
+        Binding("escape", "cancel_operation", "Cancel"),
         Binding("i", "inspect", "Inspect"),
         Binding("u", "unlock", "Unlock"),
         Binding("e", "export_hash", "Export hash"),
@@ -72,7 +95,12 @@ class DietrichApp(App[None]):
         self._initial_path = str(initial_path) if initial_path else ""
         self._inspection: DocumentInspection | None = None
         self._busy = False
+        self._operation_focus: Widget | None = None
+        self._active: ActiveOperation | None = None
+        self._operation_sequence = 0
+        self._quit_pending = False
         self._session = RecentSession()
+        self._suggested_output = ""
 
     def compose(self) -> ComposeResult:
         """Build the terminal interface."""
@@ -84,6 +112,7 @@ class DietrichApp(App[None]):
         self.theme = theme_name
         self._apply_responsive_layout(self.size.width, self.size.height)
         self._refresh_recent_list()
+        self.set_interval(0.1, self._poll_operation)
         self._log("Ready · Tab to navigate · i inspect · u unlock · e export hash · q quit")
         if self._initial_path:
             seed = Path(self._initial_path).expanduser()
@@ -100,7 +129,7 @@ class DietrichApp(App[None]):
     def _apply_responsive_layout(self, width: int, height: int) -> None:
         """Keep the primary workbench usable in ordinary 80-column terminals."""
         self.query_one("#session-rail", Vertical).display = width >= 120 and height >= 36
-        self.screen.set_class(height < 36, "-compact-height")
+        self.screen.set_class(height <= 36, "-compact-height")
         self.screen.set_class(width < 90, "-compact-width")
 
     def _log(self, message: str) -> None:
@@ -129,23 +158,46 @@ class DietrichApp(App[None]):
 
     def _apply_dossier(self, view: DossierView) -> None:
         """Map a Protection Dossier view-model onto status panel widgets."""
-        body = format_dossier_body(view)
-        status_text = "\n".join(body) if body else (view.lede or " ")
-        self.query_one("#status", Static).update(status_text)
         panel = self.query_one("#status-panel", Vertical)
         panel.remove_class(*self._STATUS_CLASSES)
         panel.add_class(f"-status-{view.state}")
         self.query_one("#status-heading", Static).update(view.heading)
-        self.query_one("#status-meta", Static).update(view.metadata)
+        self.query_one("#status-meta", Static).update(view.metadata.replace("\n", " · "))
+        self.query_one("#status-title", Static).update(view.title)
+        self.query_one("#status-lede", Static).update(view.lede)
+        self.query_one("#status-next-text", Static).update(view.next_step)
+        self.query_one("#status-next-step", Horizontal).display = bool(view.next_step)
+        for index in range(8):
+            row = self.query_one(f"#status-finding-{index}", Horizontal)
+            if index >= len(view.findings):
+                row.display = False
+                continue
+            label, value, tone = view.findings[index]
+            row.display = True
+            self.query_one(f"#status-finding-label-{index}", Static).update(label)
+            finding_value = self.query_one(f"#status-finding-value-{index}", Static)
+            finding_value.update(value)
+            finding_value.remove_class("-tone-ok", "-tone-warn", "-tone-signal", "-tone-neutral")
+            finding_value.add_class(f"-tone-{tone}")
 
     def _set_busy(self, busy: bool) -> None:
         """Disable action buttons while a background job runs (visible busy state)."""
+        if busy and not self._busy:
+            self._operation_focus = self.focused
         self._busy = busy
         for wid in ("btn-inspect", "btn-unlock", "btn-export"):
             self.query_one(f"#{wid}", Button).disabled = busy
+        for widget in self.query("Input, Checkbox, OptionList"):
+            widget.disabled = busy
+        self.query_one("#btn-cancel", Button).disabled = not busy
         self.query_one("#session-state", Static).update("WORKING" if busy else "READY")
         foot = "● working · no network" if busy else "● ready · no network"
         self.query_one("#session-foot", Static).update(foot)
+        if not busy:
+            previous, self._operation_focus = self._operation_focus, None
+            if self.focused is None and previous is not None:
+                if previous.is_mounted and not previous.disabled:
+                    previous.focus()
 
     @property
     def is_busy(self) -> bool:
@@ -154,8 +206,8 @@ class DietrichApp(App[None]):
 
     def _input_path(self) -> Path | None:
         """Return a validated existing file path, or log+show an error and return None."""
-        raw = self.query_one("#input-path", Input).value.strip()
-        if not raw:
+        raw = self.query_one("#input-path", Input).value
+        if not raw.strip():
             message = "Choose a file path first."
             self._log("error: choose a file path first")
             self._apply_dossier(error_dossier("INPUT REQUIRED", message))
@@ -172,11 +224,12 @@ class DietrichApp(App[None]):
         return path
 
     def _suggest_output(self, input_path: Path) -> None:
-        """Fill default stem_unprotected output path when the field is empty."""
+        """Refresh automatic suggestions while preserving a custom destination."""
         self._update_file_kind(input_path)
         out = self.query_one("#output-path", Input)
-        if not out.value.strip():
-            out.value = str(default_output_path(input_path))
+        if not out.value.strip() or out.value == self._suggested_output:
+            self._suggested_output = str(default_output_path(input_path))
+            out.value = self._suggested_output
 
     def _update_file_kind(self, path: Path) -> None:
         """Show the selected document suffix as compact local metadata."""
@@ -216,7 +269,6 @@ class DietrichApp(App[None]):
     def _load_recent_path(self, path: Path) -> None:
         """Put a recent path into the intake fields and inspect it."""
         self.query_one("#input-path", Input).value = str(path)
-        self.query_one("#output-path", Input).value = ""
         self._suggest_output(path)
         self._log(f"session: selected {path.name}")
         self.action_inspect()
@@ -253,7 +305,78 @@ class DietrichApp(App[None]):
     @on(Button.Pressed, "#btn-quit")
     def _on_quit_btn(self) -> None:
         """Quit button handler."""
-        self.exit()
+        self._request_quit()
+
+    @on(Button.Pressed, "#btn-cancel")
+    def action_cancel_operation(self) -> None:
+        """Request cancellation without abandoning the backend awaiter."""
+        if self._active is not None:
+            accepted = self._active.control.cancel()
+            self._log(
+                "Cancellation requested; waiting for cleanup."
+                if accepted
+                else "Publication or completion has started; waiting for the result."
+            )
+            self._poll_operation()
+
+    async def action_quit(self) -> None:
+        """Wait for backend cleanup or publication before exiting."""
+        self._request_quit()
+
+    def _request_quit(self) -> None:
+        """Record quit intent while retaining the active awaiter."""
+        if self._active is None:
+            self.exit()
+            return
+        self._quit_pending = True
+        self.action_cancel_operation()
+
+    def _poll_operation(self) -> None:
+        """Read backend phase without worker-thread widget access."""
+        if self._active is not None:
+            phase = self._active.control.phase
+            self.query_one("#session-state", Static).update(phase.upper())
+            self.query_one("#session-foot", Static).update(f"● {phase} · no network")
+            self.query_one("#btn-cancel", Button).disabled = (
+                self._active.control.cancellation_requested or phase in {"publishing", "completed"}
+            )
+
+    def _start_operation(
+        self,
+        operation: Callable[[OperationControl], TaskResult],
+        complete: Callable[[TaskResult], None],
+    ) -> None:
+        """Retain a unique operation record until the backend returns."""
+        self._operation_sequence += 1
+        record = ActiveOperation(self._operation_sequence, OperationControl())
+        self._active = record
+        record.worker = self._await_operation(record, operation, complete)
+
+    @work
+    async def _await_operation(
+        self,
+        record: ActiveOperation,
+        operation: Callable[[OperationControl], TaskResult],
+        complete: Callable[[TaskResult], None],
+    ) -> None:
+        result = await asyncio.to_thread(operation, record.control)
+        self._finish_operation(record.identifier, result, complete)
+
+    def _finish_operation(
+        self, identifier: int, result: TaskResult, complete: Callable[[TaskResult], None]
+    ) -> None:
+        """Ignore stale completion and unlock only after backend cleanup."""
+        if self._active is None or self._active.identifier != identifier:
+            return
+        self._active = None
+        self._set_busy(False)
+        if result.failure is not None and result.failure.cancelled:
+            self._apply_dossier(error_dossier("CANCELLED", result.failure.display_message))
+            self._log(result.failure.display_message)
+        else:
+            complete(result)
+        if self._quit_pending:
+            self.exit()
 
     @on(Input.Submitted, "#input-path")
     def _on_path_submit(self) -> None:
@@ -277,19 +400,22 @@ class DietrichApp(App[None]):
         path = self._input_path()
         if path is None:
             return
+        self._clear_hash_result()
         self._suggest_output(path)
+        self._clear_hash_result()
         self._set_busy(True)
         self._apply_dossier(busy_dossier("INSPECTING", "Reading local document structure…"))
         self._run_inspect(path)
 
-    @work(exclusive=True, thread=True)
     def _run_inspect(self, path: Path) -> None:
-        """Worker: call inspect_document and marshal result back to the UI thread."""
-        task = inspect_task(path, inspect=inspect_document)
-        if task.failure is not None:
-            self.call_from_thread(self._inspect_failed, task.failure.display_message)
-            return
-        self.call_from_thread(self._inspect_ok, task.require_value())
+        self._start_operation(
+            lambda control: inspect_task(path, inspect=inspect_document, control=control),
+            lambda task: (
+                self._inspect_failed(task.failure.display_message)
+                if task.failure
+                else self._inspect_ok(task.require_value())
+            ),
+        )
 
     def _inspect_failed(self, message: str) -> None:
         """UI-thread handler for inspect errors."""
@@ -321,8 +447,8 @@ class DietrichApp(App[None]):
         path = self._input_path()
         if path is None:
             return
-        out_raw = self.query_one("#output-path", Input).value.strip()
-        output = Path(out_raw).expanduser() if out_raw else default_output_path(path)
+        out_raw = self.query_one("#output-path", Input).value
+        output = Path(out_raw).expanduser() if out_raw.strip() else default_output_path(path)
         built = validate_and_build(self._form_state())
         if not built.ok or built.options is None:
             self._log(f"error: {built.error}")
@@ -337,14 +463,17 @@ class DietrichApp(App[None]):
         self._log(f"unlock starting → {output}")
         self._run_unlock(path, output, built.options)
 
-    @work(exclusive=True, thread=True)
     def _run_unlock(self, source: Path, target: Path, options: UnlockOptions) -> None:
-        """Worker: unlock_document then post success/failure to the UI thread."""
-        task = unlock_task(source, target, options, unlock=unlock_document)
-        if task.failure is not None:
-            self.call_from_thread(self._unlock_failed, task.failure.display_message)
-            return
-        self.call_from_thread(self._unlock_ok, task.require_value())
+        self._start_operation(
+            lambda control: unlock_task(
+                source, target, options, unlock=unlock_document, control=control
+            ),
+            lambda task: (
+                self._unlock_failed(task.failure.display_message)
+                if task.failure
+                else self._unlock_ok(task.require_value())
+            ),
+        )
 
     def _unlock_failed(self, message: str) -> None:
         """UI-thread handler for unlock errors; clears busy flag."""
@@ -369,19 +498,30 @@ class DietrichApp(App[None]):
         path = self._input_path()
         if path is None:
             return
+        self._clear_hash_result()
         self._set_busy(True)
         self._run_export(path)
 
-    @work(exclusive=True, thread=True)
     def _run_export(self, path: Path) -> None:
-        """Worker: export_document_hash and log a truncated line."""
-        task = export_hash_task(path, export=export_document_hash)
-        self.call_from_thread(self._export_done, export_hash_message(task))
+        self._start_operation(
+            lambda control: export_hash_task(path, export=export_document_hash, control=control),
+            self._export_done,
+        )
 
-    def _export_done(self, message: str) -> None:
-        """UI-thread handler for export-hash completion; clears busy flag."""
+    def _clear_hash_result(self) -> None:
+        """Hide recovery material when beginning a fresh inspection or export."""
+        self.query_one("#hash-result", TextArea).load_text("")
+        self.query_one("#hash-result-panel", Vertical).display = False
+
+    def _export_done(self, result: TaskResult[str]) -> None:
+        """Display complete selectable recovery material and a short log entry."""
         self._set_busy(False)
-        self._log(message)
+        self._log(export_hash_message(result))
+        if result.failure is None:
+            field = self.query_one("#hash-result", TextArea)
+            field.load_text(result.require_value())
+            self.query_one("#hash-result-panel", Vertical).display = True
+            field.focus()
 
 
 def run_tui(initial_path: str | Path | None = None) -> int:

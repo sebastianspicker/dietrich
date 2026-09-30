@@ -41,20 +41,35 @@ dependencies = ["defusedxml>=0.7.1"]
 crypto = ["msoffcrypto-tool>=5.0.0"]
 pdf = ["pikepdf>=8.0.0"]
 legacy = ["olefile>=0.46"]
-sign = ["cryptography>=42.0.0"]
+sign = ["cryptography>=42.0.0", "lxml>=5.0.0"]
 ui = ["textual>=1.0.0"]
 full = [
   "msoffcrypto-tool>=5.0.0",
   "pikepdf>=8.0.0",
   "olefile>=0.46",
   "cryptography>=42.0.0",
+  "lxml>=5.0.0",
   "textual>=1.0.0",
 ]
 dev = ["pyright>=1.1.390", "pytest>=8.0.0", "ruff>=0.6.0"]
 
+[dependency-groups]
+demo = ["playwright>=1.50.0"]
+
 [project.scripts]
 dietrich = "dietrich.cli:main"
 dietrich-tui = "dietrich.tui:main"
+dietrich-gui = "dietrich.gui:main"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src", "/tests", "/docs", "/examples", "/assets/brand",
+  "/site/index.html", "/site/styles.css", "/site/script.js",
+  "/site/README.md", "/site/screenshots", "/site/tests", "/scripts",
+  "/README.md", "/LICENSE", "/CHANGELOG.md", "/CONTRIBUTING.md",
+  "/SECURITY.md", "/AGENTS.md", "/pyproject.toml", "/uv.lock",
+]
+exclude = ["**/__pycache__", "**/*.pyc", "**/captures", "**/test-results"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dietrich"]

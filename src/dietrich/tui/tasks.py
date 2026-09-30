@@ -15,7 +15,8 @@ from typing import Generic, TypeVar
 
 from dietrich.dispatch import export_document_hash, inspect_document, unlock_document
 from dietrich.domain.models import DocumentInspection, UnlockOptions, UnlockResult
-from dietrich.errors import DietrichError
+from dietrich.errors import DietrichError, OperationCancelledError
+from dietrich.operation import OperationControl
 
 _Value = TypeVar("_Value")
 
@@ -26,6 +27,7 @@ class TaskFailure:
 
     message: str
     unexpected: bool = False
+    cancelled: bool = False
 
     @property
     def display_message(self) -> str:
@@ -60,10 +62,13 @@ class TaskResult(Generic[_Value]):
 def inspect_task(
     path: Path,
     *,
-    inspect: Callable[[Path], DocumentInspection] = inspect_document,
+    inspect: Callable[..., DocumentInspection] = inspect_document,
+    control: OperationControl | None = None,
 ) -> TaskResult[DocumentInspection]:
     """Inspect ``path`` and map expected failures for the TUI."""
-    return _run_task(lambda: inspect(path))
+    return _run_task(
+        lambda: inspect(path, control=control) if control is not None else inspect(path)
+    )
 
 
 def unlock_task(
@@ -71,19 +76,33 @@ def unlock_task(
     target: Path,
     options: UnlockOptions,
     *,
-    unlock: Callable[[Path, Path, UnlockOptions], UnlockResult] = unlock_document,
+    unlock: Callable[..., UnlockResult] = unlock_document,
+    control: OperationControl | None = None,
 ) -> TaskResult[UnlockResult]:
     """Unlock a document and map expected failures for the TUI."""
-    return _run_task(lambda: unlock(source, target, options))
+    return _run_task(
+        lambda: (
+            unlock(source, target, options, control=control)
+            if control is not None
+            else unlock(source, target, options)
+        )
+    )
 
 
 def export_hash_task(
     path: Path,
     *,
-    export: Callable[[Path, str], str] = export_document_hash,
+    export: Callable[..., str] = export_document_hash,
+    control: OperationControl | None = None,
 ) -> TaskResult[str]:
     """Export a hashcat line and map expected failures for the TUI."""
-    return _run_task(lambda: export(path, "hashcat"))
+    return _run_task(
+        lambda: (
+            export(path, "hashcat", control=control)
+            if control is not None
+            else export(path, "hashcat")
+        )
+    )
 
 
 def export_hash_message(result: TaskResult[str]) -> str:
@@ -101,6 +120,8 @@ def _run_task(operation: Callable[[], _Value]) -> TaskResult[_Value]:
     """Run one operation using the worker error contract already exposed by the TUI."""
     try:
         return TaskResult.success(operation())
+    except OperationCancelledError as exc:
+        return TaskResult.failed(TaskFailure(str(exc), cancelled=True))
     except DietrichError as exc:
         return TaskResult.failed(TaskFailure(str(exc)))
     # This is the controller boundary: every library/vendor failure must become

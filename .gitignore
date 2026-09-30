@@ -34,6 +34,7 @@ venv/
 /research/fuzz/corpus/
 /examples/out/
 /examples/_work/
+/output/
 
 # Local environment and sensitive material
 .env
@@ -76,9 +77,9 @@ Desktop.ini
 /.mcp.json
 /.codacy/
 /.codegraph/
+/.impeccable/
 /.internal/
 /.kilo/
-/.repowise/
 /.serena/
 
 # Coding assistants and local work notes

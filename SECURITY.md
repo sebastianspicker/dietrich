@@ -2,47 +2,64 @@
 
 ## Supported use
 
-Dietrich is intended for documents that the operator owns or is authorized to
-modify. It removes document flags and performs local password recovery. It does
-not bypass Microsoft Purview, Azure RMS, or other server-managed rights systems.
+Dietrich is intended only for documents that the operator owns or is authorized
+to modify. It removes supported document flags and performs local password
+recovery. It does not acquire or bypass Microsoft Purview, Azure RMS, or other
+server-managed rights licenses.
 
-## Reporting a vulnerability
+## Report a vulnerability
 
-Do not publish exploit details in a GitHub issue. Use the repository's private
-security-reporting channel when available, or contact the maintainer identified
-in `pyproject.toml` through the repository host.
+Please do not publish exploit details, confidential documents, passwords, hashes,
+certificates, or private keys in a public issue. Use the repository's
+[private vulnerability reporting page](https://github.com/sebastianspicker/dietrich/security/advisories/new)
+when it is available. If it is not, open a public issue that only asks for a
+private contact channel and contains no sensitive technical detail.
 
-Include the Dietrich version, operating system, minimal reproduction, affected
-format, and impact. Do not attach confidential documents, passwords, private
-keys, or exported hashes.
+Include the Dietrich version, operating system, affected format, impact, and a
+minimal synthetic reproduction.
 
-## Data handling
+## Data and output handling
 
-Dietrich processes local paths and does not define a network service. Operations
-can create decrypted documents, unsigned copies, password hashes, and research
-mutants. Treat those outputs as sensitive and restrict access to them.
+Dietrich processes local paths and defines no remote service or database. The
+optional graphical launcher starts a loopback HTTP session on `127.0.0.1`. Its
+random session token authorizes local file browsing and document operations, so
+keep the launch URL private and never expose or proxy the port to a network.
+Requests require the session header and matching Host and Origin checks. The
+process serves only its bundled assets, has no general file-download endpoint,
+and omits passwords from operation results. Stop the launcher when you are done;
+closing the browser tab does not stop an active operation.
 
-Use a copy of the source document. The default output is a new sibling path.
-`--force` permits replacement of an existing output and should be used only after
-the target path has been checked.
+Operations can create decrypted documents, unsigned copies, password hashes, and
+malformed research mutants. Treat these outputs as sensitive and restrict access
+to them.
 
-## Archive and format boundaries
+Work on a copy of the source. The default output is a new sibling path. `--force`
+allows replacement of an existing target and should be used only after that path
+has been checked. Successful publication uses a private mode-`0600` temporary
+file and one atomic replace.
 
-OOXML input is rejected when it contains duplicate or encrypted ZIP entries,
-more than 10,000 members, a member over 64 MiB, more than 512 MiB total
-uncompressed content, or a compression ratio over 100:1.
+## Input boundaries
 
-Signed OOXML input is rejected unless signature stripping is explicit. Stripping
-creates an unsigned copy and removes authenticity evidence. Experimental
-re-signing does not provide complete Microsoft Office signature compatibility or
-establish certificate trust.
+| Input | Limit |
+| --- | --- |
+| ZIP members | 10,000 |
+| Per-member size | 64 MiB |
+| Total uncompressed size | 512 MiB |
+| Compression ratio | 100:1 |
+
+Duplicate and encrypted ZIP entries are rejected. Signed OOXML is rejected unless
+signature stripping is explicit; stripping creates an unsigned copy and removes
+authenticity evidence. Experimental re-signing neither implements complete
+Microsoft Office signature compatibility nor establishes certificate trust.
 
 Legacy Office editing is limited to recognized equal-length record patches. IRM
-detection fails closed.
+detection fails closed. Unsupported, malformed, or ambiguous structures are
+rejected rather than processed with relaxed checks.
 
-## Dependencies
+## Dependencies and external tools
 
 Optional format support uses `msoffcrypto-tool`, `pikepdf`, `olefile`,
 `cryptography`, and `textual`. Review dependency updates and install from trusted
-package sources. `hashcat` is a separate executable and is not installed by
-Dietrich.
+package sources. `hashcat` and the optional `pdf2john` fallback are separate
+local executables; Dietrich does not install or operate a remote recovery
+service.

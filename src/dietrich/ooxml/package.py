@@ -28,7 +28,12 @@ from dietrich.ooxml.props import inspect_props_parts, transform_props_part
 from dietrich.ooxml.signatures.strip import strip_signature_members
 from dietrich.ooxml.stats import PartStats
 from dietrich.ooxml.word import inspect_word_parts, transform_word_part
-from dietrich.safety.zip_archive import package_is_signed, validate_archive_safety
+from dietrich.operation import checkpoint
+from dietrich.safety.zip_archive import (
+    package_is_signed,
+    validate_archive_safety,
+    verify_archive_crc,
+)
 
 Transformer = Callable[[str, bytes, UnlockOptions, PartStats], bytes]
 
@@ -84,8 +89,9 @@ def inspect_ooxml_package(path: Path, *, allow_signed: bool = False) -> Document
             signed = package_is_signed(names)
             vba = any(p in names for p in VBA_PROJECT_PATHS)
 
-            soft, strategies = _inspect_format_parts(fmt, names, archive.read)
-            soft.extend(inspect_props_parts(names, archive.read))
+            checkpoint()
+            soft, strategies = _inspect_format_parts(fmt, names, _checked_reader(archive))
+            soft.extend(inspect_props_parts(names, _checked_reader(archive)))
             if signed:
                 strategies.append("signature:strip")
             if vba:
@@ -154,6 +160,7 @@ def write_ooxml_candidate(
 
     try:
         fmt, vba_present = _rewrite_ooxml_source(source_path, candidate, options, stats, warnings)
+        checkpoint("validating candidate")
         _verify_candidate_package(candidate, options, fmt)
     except zipfile.BadZipFile as exc:
         raise InvalidDocumentError(
@@ -218,7 +225,7 @@ def _verify_candidate_package(
                 f"written OOXML identity changed: expected {expected_format.value}, "
                 f"found {actual_format.value}"
             )
-        failed_member = output_archive.testzip()
+        failed_member = verify_archive_crc(output_archive)
     if failed_member is not None:
         raise InvalidDocumentError(f"written package failed ZIP verification at {failed_member}")
 
@@ -263,6 +270,7 @@ def _write_transformed_archive(
     """Rewrite each retained ZIP member while preserving member metadata."""
     with zipfile.ZipFile(temp_path, "w") as target:
         for info in context.source.infolist():
+            checkpoint()
             name = info.filename.replace("\\", "/")
             if name not in context.skip_names:
                 target.writestr(
@@ -277,7 +285,9 @@ def _rewrite_member(
 ) -> bytes:
     """Apply XML and optional VBA transforms to one source member."""
     name = info.filename.replace("\\", "/")
-    data = context.rewritten_parts.get(name, context.source.read(info))
+    data = context.rewritten_parts.get(name)
+    if data is None:
+        data = context.source.read(info)
     for transformer in context.transformers:
         data = transformer(name, data, context.options, context.stats)
     if context.options.unlock_vba and name in VBA_PROJECT_PATHS:
@@ -305,3 +315,11 @@ def _copy_zip_info(info: zipfile.ZipInfo) -> zipfile.ZipInfo:
     copied.internal_attr = info.internal_attr
     copied.external_attr = info.external_attr
     return copied
+
+
+def _checked_reader(archive: zipfile.ZipFile) -> Callable[[str], bytes]:
+    def read(name: str) -> bytes:
+        checkpoint()
+        return archive.read(name)
+
+    return read

@@ -1,76 +1,73 @@
-/* Workbench shell + left session rail with live recent files. */
+/* Workbench shell + left session rail with live MRU entries. */
 
 #workbench {
     width: 1fr;
     height: 1fr;
-    background: #12161C;
+    padding: 1 2;
+    background: #0F141A;
 }
 
 #session-rail {
     display: none;
-    width: 24;
+    width: 26;
     height: 1fr;
+    margin-right: 2;
     padding: 0;
-    border-right: solid #3A4656;
-    background: #10151C;
+    background: #151B23;
 }
 
 #session-head {
     height: 2;
     padding: 0 1;
-    color: #8B97A8;
+    color: #9AA6B6;
     text-style: bold;
     content-align: left middle;
-    border-bottom: solid #3A4656;
 }
 
 #recent-list {
     height: 1fr;
     min-height: 4;
-    padding: 0;
-    background: #10151C;
-    color: #D7DDE6;
+    padding: 0 1 1 1;
+    background: #151B23;
+    color: #E4E9F0;
     border: none;
-    scrollbar-background: #10151C;
-    scrollbar-color: #3A4656;
+    scrollbar-background: #151B23;
+    scrollbar-color: #2A3442;
 }
 
 #recent-list > .option-list--option {
     padding: 0 1;
-    color: #D7DDE6;
+    color: #E4E9F0;
 }
 
 #recent-list > .option-list--option-highlighted {
-    background: #252E3A;
-    color: #D7DDE6;
+    background: #232D3A;
+    color: #E4E9F0;
+    border-left: tall #8FB4DC;
 }
 
-#recent-list > .option-list--option-hover {
-    background: #1B222C;
-}
+#recent-list > .option-list--option-hover { background: #1C242F; }
 
 #session-empty {
     height: auto;
     min-height: 3;
     padding: 1;
-    color: #8B97A8;
+    color: #8896A9;
     display: none;
 }
 
-#session-empty.-visible {
-    display: block;
-}
+#session-empty.-visible { display: block; }
 
 #session-foot {
     height: 2;
     padding: 0 1;
-    color: #8B97A8;
-    border-top: solid #3A4656;
+    color: #8896A9;
+    border-top: solid #2A3442;
     content-align: left middle;
 }
 
 #main-column {
     width: 1fr;
     height: 1fr;
-    padding: 0 1;
+    max-width: 104;
 }

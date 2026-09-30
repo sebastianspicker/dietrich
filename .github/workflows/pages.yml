@@ -1,0 +1,88 @@
+name: Deploy Instrument Workbench demo to Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Validate static release files
+        run: |
+          test -f site/index.html
+          test -f site/styles.css
+          test -f site/script.js
+          for shot in 01-choose 02-review 03-processing 04-result 05-review-mobile; do
+            test -f "site/screenshots/$shot.png"
+          done
+          node --check site/script.js
+          grep -Fq "Instrument Workbench" site/index.html
+          grep -Fq "Simulation only." site/index.html
+          grep -Fiq "sanitized fixture" site/index.html
+          if grep -Eiq "<(script|link)[^>]+(src|href)=[\"']https?://" site/index.html; then
+            echo "External runtime asset found"
+            exit 1
+          fi
+          if grep -Eiq "@import|url\([[:space:]]*['\"]?[[:space:]]*(https?:)?//" site/styles.css; then
+            echo "External CSS runtime asset found"
+            exit 1
+          fi
+          if grep -Eiq 'fetch\(|XMLHttpRequest|WebSocket|localStorage|sessionStorage|indexedDB|showOpenFilePicker' site/index.html site/script.js; then
+            echo "Network, storage, or file-picker API found"
+            exit 1
+          fi
+
+  upload:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Stage reviewed demo files
+        run: |
+          mkdir pages-dist
+          cp site/index.html site/styles.css site/script.js pages-dist/
+          cp -R site/screenshots pages-dist/screenshots
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: pages-dist
+
+  deploy:
+    needs: upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5

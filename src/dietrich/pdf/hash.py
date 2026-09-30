@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dietrich.errors import EncryptedDocumentError, InvalidDocumentError
+from dietrich.operation import checkpoint
 from dietrich.safety.bounded_io import read_file_limited
 
 MAX_NATIVE_PDF_HASH_BYTES = 128 * 1024 * 1024
@@ -34,6 +35,7 @@ def export_pdf_hash(path: Path, fmt: str = "hashcat") -> str:
     the on-disk /O /U /OE /UE /Perms fields are present.
     """
     path = Path(path)
+    checkpoint("exporting PDF hash")
     try:
         raw = read_file_limited(path, MAX_NATIVE_PDF_HASH_BYTES)
     except ValueError as exc:
@@ -43,9 +45,10 @@ def export_pdf_hash(path: Path, fmt: str = "hashcat") -> str:
         ) from exc
     if not raw.startswith(b"%PDF"):
         raise InvalidDocumentError(f"{path.name} is not a PDF")
+    checkpoint()
 
     # Prefer pikepdf encryption params when available (handles modern writers).
-    encrypt = _encrypt_dict_via_pikepdf(path) or _find_encrypt_dict(raw)
+    encrypt = _encrypt_dict_via_pikepdf(path, raw) or _find_encrypt_dict(raw)
     if encrypt is None:
         raise EncryptedDocumentError(f"{path.name} has no /Encrypt dictionary")
 
@@ -161,27 +164,29 @@ def _rc4_key_bits(length: int | None, revision: int | None) -> int:
     return length
 
 
-def _encrypt_dict_via_pikepdf(path: Path) -> dict[str, str] | None:
+def _encrypt_dict_via_pikepdf(path: Path, raw: bytes) -> dict[str, str] | None:
     """Extract /Encrypt dict fields via pikepdf when possible."""
     try:
         import pikepdf
     except ImportError:
         return None
-    return _pikepdf_encrypt_or_raw(path, pikepdf)
+    return _pikepdf_encrypt_or_raw(path, pikepdf, raw)
 
 
-def _pikepdf_encrypt_or_raw(path: Path, pikepdf) -> dict[str, str] | None:
+def _pikepdf_encrypt_or_raw(path: Path, pikepdf, raw: bytes) -> dict[str, str] | None:
     """Use pikepdf when it can open the file, otherwise retain raw-trailer fallback."""
+    checkpoint()
     try:
         pdf = pikepdf.open(path)
     except (pikepdf.PasswordError, pikepdf.PdfError, OSError, TypeError, ValueError):
-        return _encrypt_from_raw_trailer(path)
+        return _encrypt_from_raw_trailer(raw)
     try:
         return _opened_pikepdf_encrypt_dict(pdf, pikepdf)
     except (AttributeError, KeyError, OSError, TypeError, ValueError):
-        return _encrypt_from_raw_trailer(path)
+        return _encrypt_from_raw_trailer(raw)
     finally:
         pdf.close()
+        checkpoint()
 
 
 def _opened_pikepdf_encrypt_dict(pdf, pikepdf) -> dict[str, str] | None:
@@ -268,12 +273,8 @@ def _add_pikepdf_crypt_filter(pikepdf, encrypt, result: dict[str, str]) -> None:
         return
 
 
-def _encrypt_from_raw_trailer(path: Path) -> dict[str, str] | None:
-    """Fallback: parse /Encrypt from raw PDF trailer bytes."""
-    try:
-        raw = read_file_limited(path, MAX_NATIVE_PDF_HASH_BYTES)
-    except ValueError:
-        return None
+def _encrypt_from_raw_trailer(raw: bytes) -> dict[str, str] | None:
+    """Fallback: parse /Encrypt from the already bounded PDF buffer."""
     return _find_encrypt_dict(raw)
 
 

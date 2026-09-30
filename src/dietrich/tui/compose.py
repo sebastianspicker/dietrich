@@ -13,6 +13,7 @@ from textual.widgets import (
     Log,
     OptionList,
     Static,
+    TextArea,
 )
 
 from dietrich import __version__
@@ -20,13 +21,13 @@ from dietrich.brand import AUTHORIZED_PLAQUE, SUBTITLE
 
 
 def compose_chrome() -> ComposeResult:
-    """Brand row and authorized plaque."""
+    """Brand row and quiet local-authority notice."""
     with Horizontal(id="brand-row"):
         with Vertical(id="brand-block"):
             yield Static("⌁  DIETRICH", id="brand-name")
             yield Static(SUBTITLE.replace(" - ", " · "), id="brand-subtitle")
         yield Static(f"ALPHA {__version__} · LOCAL ONLY", id="brand-meta")
-    yield Static(AUTHORIZED_PLAQUE, id="banner")
+    yield Static(f"◈  {AUTHORIZED_PLAQUE}", id="banner")
 
 
 def compose_session_rail() -> ComposeResult:
@@ -56,15 +57,21 @@ def compose_path_row(initial_path: str = "") -> ComposeResult:
 
 
 def compose_status_panel() -> ComposeResult:
-    """Protection dossier: heading, meta chips, multi-line body."""
+    """Protection dossier with separate label, title, lede, findings, and next step."""
     with Vertical(id="status-panel"):
         with Horizontal(id="status-header"):
             yield Static("READY TO INSPECT", id="status-heading")
-            yield Static("SIGNED  -\nIRM GATE  ACTIVE", id="status-meta")
-        yield Static(
-            "Paste a document path, then Inspect.\nNext · Open a local file, then Inspect.",
-            id="status",
-        )
+            yield Static("SIGNED  - · IRM GATE  ACTIVE", id="status-meta")
+        yield Static("Ready to inspect", id="status-title")
+        yield Static("Paste a document path, then Inspect.", id="status-lede")
+        with Vertical(id="status-findings"):
+            for index in range(8):
+                with Horizontal(id=f"status-finding-{index}", classes="finding-row"):
+                    yield Static("", id=f"status-finding-label-{index}", classes="finding-label")
+                    yield Static("", id=f"status-finding-value-{index}", classes="finding-value")
+        with Horizontal(id="status-next-step"):
+            yield Static("→", id="status-next-marker")
+            yield Static("Open a local file, then Inspect.", id="status-next-text")
 
 
 def compose_output_row() -> ComposeResult:
@@ -122,7 +129,8 @@ def compose_advanced() -> ComposeResult:
 def compose_secondary_actions() -> ComposeResult:
     """Export hash and Quit utility buttons."""
     with Horizontal(id="secondary-actions"):
-        yield Button("Export hash · E", id="btn-export")
+        yield Button("Export · E", id="btn-export")
+        yield Button("Cancel", id="btn-cancel", disabled=True)
         yield Button("Quit · Q", id="btn-quit")
 
 
@@ -144,6 +152,9 @@ def compose_main_column(initial_path: str = "") -> ComposeResult:
         with Horizontal(id="utility-row"):
             yield from compose_advanced()
             yield from compose_secondary_actions()
+        with Vertical(id="hash-result-panel"):
+            yield Static("RECOVERY HASH · select to copy", classes="section-label")
+            yield TextArea(read_only=True, soft_wrap=False, id="hash-result")
         yield from compose_activity_panel()
 
 
@@ -153,6 +164,7 @@ def compose_key_footer() -> ComposeResult:
         "[b reverse] I [/b reverse] Inspect   "
         "[b reverse] U [/b reverse] Unlock   "
         "[b reverse] E [/b reverse] Export hash   "
+        "[b reverse] Esc [/b reverse] Cancel   "
         "[b reverse] ? [/b reverse] Help   "
         "[b reverse] Q [/b reverse] Quit",
         id="key-footer",

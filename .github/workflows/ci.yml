@@ -10,38 +10,71 @@ permissions:
   contents: read
 
 jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - run: uv sync --locked --all-extras --group demo
+      - run: uv lock --check --offline
+      - run: uv run ruff check src tests examples scripts site/tests
+      - run: uv run ruff format --check src tests examples scripts site/tests
+      - run: uv run pyright
+
   test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - run: uv sync --locked --all-extras
+      - run: uv run pytest -q --tb=short
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
-
-      - name: Install locked environment
-        run: uv sync --locked --all-extras
-
-      - name: Ruff
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - run: uv sync --locked --all-extras
+      - name: Build once and check both installed artifacts
         run: |
-          uv run ruff check src tests examples
-          uv run ruff format --check src tests examples
+          build_dir="$(mktemp -d)"
+          uv build --offline --no-sources --no-create-gitignore --out-dir "$build_dir"
+          uv run python scripts/check_distributions.py "$build_dir" --python 3.12
 
-      - name: Pyright
-        run: uv run pyright
-
-      - name: Pytest
-        run: uv run pytest -q --tb=short
-
-      - name: Build distributions
-        run: uv build --offline --no-sources --no-create-gitignore
+  demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - run: uv sync --locked --all-extras --group demo
+      - run: uv run --group demo playwright install --with-deps chromium
+      - run: node --check site/script.js
+      - run: uv run --group demo pytest site/tests -q --tb=short
+      - name: Validate local graphical interface
+        run: |
+          for script in src/dietrich/gui/assets/*.js; do node --check "$script"; done
+          uv run --group demo pytest tests/test_gui_browser.py -q --tb=short

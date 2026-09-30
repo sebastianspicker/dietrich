@@ -7,6 +7,8 @@ from pathlib import PurePosixPath, PureWindowsPath
 from urllib.parse import unquote
 
 from dietrich.errors import EncryptedDocumentError, SignedDocumentError, UnsafeArchiveError
+from dietrich.operation import checkpoint
+from dietrich.safety.snapshot import snapshot_checked
 
 MAX_ARCHIVE_MEMBERS = 10_000
 MAX_MEMBER_UNCOMPRESSED_BYTES = 64 * 1024 * 1024
@@ -51,15 +53,14 @@ def validate_archive_safety(
     allow_signed: bool = False,
 ) -> None:
     """Reject archives whose metadata is unsafe to process before reading members."""
+    checkpoint()
     entries = archive.infolist()
     if len(entries) > MAX_ARCHIVE_MEMBERS:
         raise UnsafeArchiveError(
             f"archive has {len(entries)} entries; the limit is {MAX_ARCHIVE_MEMBERS}."
         )
 
-    reject_encrypted_entries(archive)
     names = [info.filename for info in entries]
-    _reject_duplicate_names(names)
 
     if not allow_signed and package_is_signed(names):
         raise SignedDocumentError(
@@ -67,14 +68,35 @@ def validate_archive_safety(
             "signatures. Pass strip_signatures=True / --strip-signatures for an unsigned copy."
         )
 
+    if snapshot_checked(archive.filename):
+        return
+    reject_encrypted_entries(archive)
+    _reject_duplicate_names(names)
     total_size = 0
     for info in entries:
+        checkpoint()
         _validate_member_limits(info)
         total_size += info.file_size
         if total_size > MAX_TOTAL_UNCOMPRESSED_BYTES:
             raise UnsafeArchiveError(
                 f"archive expands to more than {MAX_TOTAL_UNCOMPRESSED_BYTES} bytes."
             )
+
+    snapshot_checked(archive.filename, remember=True)
+
+
+def verify_archive_crc(archive: zipfile.ZipFile) -> str | None:
+    """Read every member fully, preserving CRC verification with bounded checkpoints."""
+    for info in archive.infolist():
+        checkpoint()
+        try:
+            with archive.open(info) as member:
+                while member.read(1024 * 1024):
+                    checkpoint()
+        except zipfile.BadZipFile:
+            return info.filename
+    checkpoint()
+    return None
 
 
 def _reject_duplicate_names(names: list[str]) -> None:

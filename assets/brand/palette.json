@@ -1,60 +1,80 @@
 {
   "$schema_comment": "Dietrich interface color tokens and Textual theme mapping.",
   "name": "Werkbank",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "tokens": {
     "night-slate": {
-      "hex": "#12161C",
+      "hex": "#0F141A",
       "role": "Canvas",
       "usage": "App background, terminal canvas"
     },
     "bench-iron": {
-      "hex": "#1B222C",
+      "hex": "#151B23",
       "role": "Surface",
       "usage": "Panels, status box fill"
     },
     "drawer": {
-      "hex": "#252E3A",
+      "hex": "#1C242F",
       "role": "Raised",
       "usage": "Elevated rows, inputs, hover fill"
     },
+    "overlay": {
+      "hex": "#232D3A",
+      "role": "Overlay",
+      "usage": "Selected rows and nested surfaces"
+    },
     "cold-seam": {
-      "hex": "#3A4656",
+      "hex": "#2A3442",
       "role": "Hairline",
       "usage": "Borders, dividers, inactive chrome"
     },
     "paper-gray": {
-      "hex": "#D7DDE6",
+      "hex": "#E4E9F0",
       "role": "Ink",
       "usage": "Primary text on dark"
     },
     "filing": {
-      "hex": "#8B97A8",
+      "hex": "#9AA6B6",
       "role": "Mute",
       "usage": "Secondary labels, hints, footer"
     },
+    "filing-faint": {
+      "hex": "#8896A9",
+      "role": "Tertiary ink",
+      "usage": "Quiet metadata and timestamps"
+    },
     "oxidized-brass": {
-      "hex": "#C4A35A",
+      "hex": "#D4B36A",
       "role": "Action",
-      "usage": "Primary actions, Unlock, focus keyline"
+      "usage": "Primary action text and focus keyline"
+    },
+    "brass-fill": {
+      "hex": "#C4A35A",
+      "role": "Action fill",
+      "usage": "Primary Unlock button fill"
     },
     "stamp-blue": {
-      "hex": "#4F7CAC",
+      "hex": "#8FB4DC",
       "role": "Signal",
       "usage": "Inspect, info, ethics/authorized plaque"
     },
+    "signal-fill": {
+      "hex": "#35587E",
+      "role": "Signal fill",
+      "usage": "Quiet inspection notice fill"
+    },
     "oil-green": {
-      "hex": "#5F8F6B",
+      "hex": "#82B58F",
       "role": "OK",
       "usage": "Success, completed unlock"
     },
     "amber-key": {
-      "hex": "#C9893A",
+      "hex": "#D9A45B",
       "role": "Warn",
       "usage": "Warnings, soft caution"
     },
     "seal-red": {
-      "hex": "#B54A4A",
+      "hex": "#D37C6E",
       "role": "Stop",
       "usage": "Errors, hard stops"
     },
@@ -73,52 +93,52 @@
     "comment": "Palette role names ≠ Textual Theme field names. Brass (Action) → primary. Stamp blue (Signal) → secondary and accent. Never wire Textual accent to brass.",
     "primary": {
       "token": "oxidized-brass",
-      "hex": "#C4A35A",
-      "usage": "Primary actions, Unlock, focus/status border"
+      "hex": "#D4B36A",
+      "usage": "Primary action text and focus keyline"
     },
     "secondary": {
       "token": "stamp-blue",
-      "hex": "#4F7CAC",
+      "hex": "#8FB4DC",
       "usage": "Inspect, info chrome, log border"
     },
     "accent": {
       "token": "stamp-blue",
-      "hex": "#4F7CAC",
-      "usage": "Ethics / authorized banner plaque authority"
+      "hex": "#8FB4DC",
+      "usage": "Inspection and quiet authorized notice"
     },
     "foreground": {
       "token": "paper-gray",
-      "hex": "#D7DDE6",
+      "hex": "#E4E9F0",
       "usage": "Body ink; drives $text on dark"
     },
     "surface": {
       "token": "bench-iron",
-      "hex": "#1B222C",
+      "hex": "#151B23",
       "usage": "Status box, panel fills"
     },
     "panel": {
       "token": "bench-iron",
-      "hex": "#1B222C",
+      "hex": "#151B23",
       "usage": "Raised panel chrome"
     },
     "background": {
       "token": "night-slate",
-      "hex": "#12161C",
+      "hex": "#0F141A",
       "usage": "Screen canvas"
     },
     "error": {
       "token": "seal-red",
-      "hex": "#B54A4A",
+      "hex": "#D37C6E",
       "usage": "Hard errors"
     },
     "warning": {
       "token": "amber-key",
-      "hex": "#C9893A",
+      "hex": "#D9A45B",
       "usage": "Warnings"
     },
     "success": {
       "token": "oil-green",
-      "hex": "#5F8F6B",
+      "hex": "#82B58F",
       "usage": "Successful unlock / OK"
     },
     "dark": true
@@ -127,18 +147,38 @@
     "comment": "Not Theme(...) kwargs - use CSS variables or classes",
     "raised": {
       "token": "drawer",
-      "hex": "#252E3A",
+      "hex": "#1C242F",
       "usage": "Input fill; optional nested panel alternative"
     },
     "hairline": {
       "token": "cold-seam",
-      "hex": "#3A4656",
+      "hex": "#2A3442",
       "usage": "Border"
     },
     "mute": {
       "token": "filing",
-      "hex": "#8B97A8",
+      "hex": "#9AA6B6",
       "usage": "Secondary text"
+    },
+    "overlay": {
+      "token": "overlay",
+      "hex": "#232D3A",
+      "usage": "Selected rows and nested surfaces"
+    },
+    "faint": {
+      "token": "filing-faint",
+      "hex": "#8896A9",
+      "usage": "Tertiary text"
+    },
+    "brass-fill": {
+      "token": "brass-fill",
+      "hex": "#C4A35A",
+      "usage": "Primary action fill"
+    },
+    "signal-fill": {
+      "token": "signal-fill",
+      "hex": "#35587E",
+      "usage": "Quiet signal fill"
     }
   },
   "product": {

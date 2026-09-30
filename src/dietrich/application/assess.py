@@ -19,6 +19,7 @@ from dietrich.errors import (
     MissingDependencyError,
     UnsupportedFormatError,
 )
+from dietrich.operation import checkpoint
 from dietrich.safety.bounded_io import read_file_prefix
 
 CFBF_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
@@ -28,10 +29,13 @@ ZIP_MAGIC = b"PK\x03\x04"
 
 def assess_document(path: Path) -> DocumentInspection:
     """Classify a document and attach typed capabilities and blockers."""
+    checkpoint("assessing")
     inspection = _classify_path(Path(path))
     from dietrich.crypto.irm import detect_irm, irm_block_message
 
+    checkpoint("checking rights management")
     irm = detect_irm(inspection.input_path)
+    checkpoint()
     blockers: list[Blocker] = list(inspection.blockers)
     if irm.is_irm:
         blockers.append(Blocker(BlockerCode.IRM, irm_block_message(irm)))
@@ -49,6 +53,7 @@ def assess_excel_workbook(path: Path) -> WorkbookInspection:
     """Validate and project the Excel-only compatibility inspection."""
     from dietrich.ooxml.package import inspect_ooxml_package
 
+    checkpoint("assessing")
     inspection = inspect_ooxml_package(Path(path), allow_signed=False)
     if inspection.document_format != DocumentFormat.EXCEL_OOXML:
         raise InvalidDocumentError(f"{path} is not an Excel OOXML workbook.")

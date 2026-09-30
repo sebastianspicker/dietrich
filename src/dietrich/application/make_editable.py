@@ -15,6 +15,7 @@ from dietrich.errors import (
     MissingDependencyError,
     UnsupportedFormatError,
 )
+from dietrich.operation import checkpoint
 from dietrich.safety.artifact_transaction import ArtifactTransaction
 from dietrich.safety.bounded_io import read_file_prefix
 
@@ -70,8 +71,10 @@ def _make_editable_copy(
                 f"{source} is not an {required_format.value} document "
                 f"(found {inspection.document_format.value})."
             )
+        checkpoint("writing")
         artifact = _write_candidate(snapshot, inspection, options, transaction)
         artifact = replace(artifact, source_path=source)
+        checkpoint("signing")
         artifact = _maybe_sign(artifact, options, transaction)
         transaction.commit(artifact, validate_semantics=_validate_artifact_semantics)
 
@@ -79,7 +82,7 @@ def _make_editable_copy(
         input_path=source,
         output_path=target,
         removed=artifact.removed,
-        document_format=artifact.document_format,
+        document_format=artifact.result_document_format or artifact.document_format,
         vba_project_present=artifact.vba_project_present,
         password_used=artifact.password_used,
         warnings=artifact.warnings,
@@ -100,7 +103,7 @@ def _write_candidate(source, inspection, options, transaction) -> CandidateArtif
             raise EncryptedDocumentError(
                 "Document is open-password encrypted; soft-only mode cannot decrypt it."
             )
-        return _write_decrypted_office_candidate(source, options, transaction)
+        return _write_decrypted_office_candidate(source, inspection, options, transaction)
     if inspection.document_format == DocumentFormat.PDF:
         return _write_pdf_candidate(source, inspection, options, transaction)
     if inspection.document_format in OOXML_FORMATS:
@@ -124,19 +127,23 @@ def _write_pdf_candidate(source, inspection, options, transaction) -> CandidateA
     if inspection.user_password_required and not options.soft_only:
         from dietrich.application.passwords import recover_pdf_password
 
-        options = replace(options, password=recover_pdf_password(source, options))
+        options = replace(
+            options, password=recover_pdf_password(source, options, inspection=inspection)
+        )
     return write_pdf_candidate(source, transaction.candidate_path(".pdf"), options)
 
 
 def _write_decrypted_office_candidate(
-    source: Path, options: UnlockOptions, transaction: ArtifactTransaction
+    source: Path, inspection, options: UnlockOptions, transaction: ArtifactTransaction
 ) -> CandidateArtifact:
     from dietrich.application.passwords import recover_office_password
     from dietrich.ooxml import encryption
 
-    password = recover_office_password(source, options)
+    password = recover_office_password(source, options, inspection=inspection)
     decrypted = transaction.candidate_path(source.suffix or ".bin")
+    checkpoint("decrypting")
     encryption.decrypt_to(source, password, decrypted)
+    checkpoint("writing")
     header = read_file_prefix(decrypted, 8)
     warnings = ["Decrypted open-password protected Office file."]
 
@@ -153,7 +160,7 @@ def _write_decrypted_office_candidate(
         return replace(
             artifact,
             source_path=source,
-            document_format=DocumentFormat.ENCRYPTED_OOXML,
+            result_document_format=DocumentFormat.ENCRYPTED_OOXML,
             password_used=password,
             warnings=tuple(warnings),
         )
@@ -167,7 +174,8 @@ def _write_decrypted_office_candidate(
             path=candidate,
             source_path=source,
             kind=ArtifactKind.LEGACY_OFFICE,
-            document_format=DocumentFormat.ENCRYPTED_OOXML,
+            document_format=DocumentFormat.LEGACY_CFBF,
+            result_document_format=DocumentFormat.ENCRYPTED_OOXML,
             removed=RemovalCounts(),
             password_used=password,
             warnings=tuple(warnings),
@@ -219,6 +227,8 @@ def _maybe_sign(
 
 
 def _needs_office_decryption(source: Path, document_format: DocumentFormat) -> bool:
+    if document_format in OOXML_FORMATS or document_format == DocumentFormat.PDF:
+        return False
     if document_format == DocumentFormat.ENCRYPTED_OOXML:
         return True
     try:

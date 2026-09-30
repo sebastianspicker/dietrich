@@ -63,6 +63,18 @@ def busy_dossier(heading: str, message: str, state: str = "info") -> DossierView
 
 def from_inspection(inspection: DocumentInspection) -> DossierView:
     """Build a dossier from a successful :class:`DocumentInspection`."""
+    if inspection.blockers:
+        return DossierView(
+            heading="INSPECTION BLOCKED",
+            title="Local operation blocked",
+            lede=" ".join(blocker.detail for blocker in inspection.blockers),
+            findings=tuple(
+                ("Blocker", blocker.code.value, "warn") for blocker in inspection.blockers
+            ),
+            next_step="Stop. Resolve the reported blockers before creating a working copy.",
+            metadata=_signed_metadata(inspection.signed),
+            state="error",
+        )
     title, lede, next_step = _diagnose(inspection)
     findings = _inspection_findings(inspection)
     metadata = _signed_metadata(inspection.signed)

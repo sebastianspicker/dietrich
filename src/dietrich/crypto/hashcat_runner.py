@@ -18,6 +18,7 @@ from dietrich.external_tools import (
     ProcessResult,
     run_hashcat_argv_sync,
 )
+from dietrich.operation import checkpoint
 
 
 @dataclass(frozen=True)
@@ -92,6 +93,7 @@ def run_hashcat(
     - extra_args may supply additional hashcat options; if neither wordlist nor mask
       is set, extra_args alone must supply a complete attack (caller validates).
     """
+    checkpoint("preparing hashcat")
     options = _HashcatOptions(
         mode=mode,
         wordlist=wordlist,
@@ -108,6 +110,7 @@ def run_hashcat(
         files = _prepare_hashcat_files(workspace, body, potfile)
         command = _hashcat_command(hashcat, options, files)
         process = _run_hashcat(command, options.timeout, workspace)
+        checkpoint("reading hashcat result")
         return _hashcat_result(process, command, files, body, options.mode)
 
 

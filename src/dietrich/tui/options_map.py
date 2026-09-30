@@ -48,7 +48,7 @@ def _empty_to_none(value: str) -> str | None:
 def _path_or_none(value: str) -> Path | None:
     """Parse a non-empty path string into Path, else None."""
     text = _empty_to_none(value)
-    return Path(text) if text else None
+    return Path(text).expanduser() if text else None
 
 
 def validate_and_build(state: FormState) -> ValidationResult:
@@ -83,7 +83,7 @@ def validate_and_build(state: FormState) -> ValidationResult:
         strip_signatures=state.strip_signatures,
         unlock_vba=state.unlock_vba,
         soft_only=state.soft_only,
-        password=_empty_to_none(state.password),
+        password=state.password or None,
         wordlist=wordlist,
         mask=_empty_to_none(state.mask),
         workers=workers,

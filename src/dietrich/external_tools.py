@@ -7,12 +7,16 @@ import os
 import shutil
 import signal
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
+from typing import Any
+
+from dietrich.operation import checkpoint
 
 MAX_CAPTURE_BYTES = 1024 * 1024
+PROCESS_GRACE_SECONDS = 0.2
 
 
 @dataclass(frozen=True)
@@ -47,12 +51,14 @@ async def capture_process(
                     task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
 
+    collection = asyncio.create_task(collect())
     try:
-        returncode, stdout, stderr = await asyncio.wait_for(collect(), timeout)
-    except (TimeoutError, ProcessOutputLimitError):
-        if process.returncode is None:
-            _kill_process_group(process)
-        await process.wait()
+        returncode, stdout, stderr = await _wait_for_collection(collection, timeout)
+    except BaseException:
+        await _stop_process_tree(process)
+        if not collection.done():
+            collection.cancel()
+        await asyncio.gather(collection, return_exceptions=True)
         raise
     return ProcessResult(
         returncode=returncode,
@@ -78,6 +84,22 @@ async def _read_limited(stream: asyncio.StreamReader | None, limit: int) -> byte
     return b"".join(chunks)
 
 
+async def _wait_for_collection(
+    collection: asyncio.Task[tuple[int, bytes, bytes]], timeout: float | None
+) -> tuple[int, bytes, bytes]:
+    """Poll the operation control while awaiting bounded process output."""
+    loop = asyncio.get_running_loop()
+    deadline = None if timeout is None else loop.time() + timeout
+    while True:
+        checkpoint()
+        if deadline is not None and loop.time() >= deadline:
+            raise TimeoutError
+        interval = 0.05 if deadline is None else min(0.05, deadline - loop.time())
+        done, _ = await asyncio.wait({collection}, timeout=max(0, interval))
+        if collection in done:
+            return await collection
+
+
 async def run_hashcat_argv(
     argv: Sequence[str | PathLike[str]],
     *,
@@ -85,10 +107,13 @@ async def run_hashcat_argv(
     cwd: str | PathLike[str] | None = None,
 ) -> ProcessResult:
     """Run a validated hashcat command in a private working directory."""
+    checkpoint("running hashcat")
     if len(argv) < 2 or str(argv[1]) != "-m":
         raise ValueError("hashcat argv must begin with an executable followed by '-m'")
-    process = await _create_hashcat_process(argv, cwd=cwd)
-    return await capture_process(process, timeout=timeout)
+    process = await _create_process_safely(_create_hashcat_process(argv, cwd=cwd))
+    result = await capture_process(process, timeout=timeout)
+    checkpoint()
+    return result
 
 
 def run_hashcat_argv_sync(
@@ -105,10 +130,14 @@ async def run_pdf2john(
     executable: str | PathLike[str], source: str | PathLike[str], *, timeout: float | None = None
 ) -> ProcessResult:
     """Run pdf2john against a fixed private filename rather than user input."""
+    checkpoint("running pdf2john")
     with tempfile.TemporaryDirectory(prefix="dietrich-pdf2john-") as directory:
         shutil.copyfile(source, Path(directory) / "input.pdf")
-        process = await _create_pdf2john_process(executable, cwd=directory)
-        return await capture_process(process, timeout=timeout)
+        checkpoint()
+        process = await _create_process_safely(_create_pdf2john_process(executable, cwd=directory))
+        result = await capture_process(process, timeout=timeout)
+        checkpoint()
+        return result
 
 
 def run_pdf2john_sync(
@@ -136,6 +165,19 @@ async def _create_hashcat_process(
     )
 
 
+async def _create_process_safely(
+    creation: Coroutine[Any, Any, asyncio.subprocess.Process],
+) -> asyncio.subprocess.Process:
+    """Finish an in-flight spawn on caller cancellation so its child can be reaped."""
+    task = asyncio.create_task(creation)
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        process = await asyncio.shield(task)
+        await _stop_process_tree(process)
+        raise
+
+
 async def _create_pdf2john_process(
     executable: str | PathLike[str], *, cwd: str | PathLike[str]
 ) -> asyncio.subprocess.Process:
@@ -160,19 +202,41 @@ def _sanitized_environment() -> Mapping[str, str]:
     }
 
 
-def _kill_process_group(process: asyncio.subprocess.Process) -> None:
-    """Terminate the isolated tool process and any children it created."""
-    if os.name != "nt":
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-            return
-        except ProcessLookupError:
-            return
-    process.kill()
+async def _stop_process_tree(process: asyncio.subprocess.Process) -> None:
+    """Stop an isolated POSIX group or the direct Windows child, then reap it."""
+    if os.name == "nt":
+        if process.returncode is None:
+            process.terminate()
+        await _wait_grace(process)
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        return
+
+    _signal_process_group(process.pid, signal.SIGTERM)
+    await asyncio.sleep(PROCESS_GRACE_SECONDS)
+    _signal_process_group(process.pid, signal.SIGKILL)
+    await process.wait()
+
+
+async def _wait_grace(process: asyncio.subprocess.Process) -> None:
+    """Give a directly managed child a short cooperative shutdown window."""
+    deadline = asyncio.get_running_loop().time() + PROCESS_GRACE_SECONDS
+    while process.returncode is None and asyncio.get_running_loop().time() < deadline:
+        await asyncio.sleep(0.01)
+
+
+def _signal_process_group(pid: int, signal_number: signal.Signals) -> None:
+    """Signal a child-created POSIX session, tolerating an already-dead group."""
+    try:
+        os.killpg(pid, signal_number)
+    except ProcessLookupError:
+        pass
 
 
 __all__ = [
     "MAX_CAPTURE_BYTES",
+    "PROCESS_GRACE_SECONDS",
     "ProcessOutputLimitError",
     "ProcessResult",
     "capture_process",
