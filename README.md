@@ -212,10 +212,11 @@ component ownership, dependency direction, runtime flows, and safety invariants.
 
 ## Development
 
-Install the locked development environment:
+Install the locked development environment. The `demo` group carries the
+Playwright runtime that `pyright` and the browser/demo tests need:
 
 ```bash
-uv sync --locked --all-extras
+uv sync --locked --all-extras --group demo
 ```
 
 Run the repository gate from the root:

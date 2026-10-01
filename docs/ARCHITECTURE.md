@@ -70,20 +70,27 @@ flowchart TD
 | `crypto/` | Bounded password candidates and controlled local hashcat execution |
 | `safety/` | Bounded ZIP and CFB access, plus the sole final-publication transaction |
 | `cli.py`, `tui/`, `gui/` | Input collection and presentation, with no document policy |
+| `research/` | Experimental local OOXML mutation generator behind its own `dietrich-research` entry point, isolated from the document command |
 
 The intended dependency direction is adapters → public facade and application →
 format modules → domain and safety. Architecture tests reject forbidden imports,
-direct CLI or TUI access to implementation packages, multiple publication owners,
-and format writers that inspect final targets.
+including CLI and TUI access to implementation packages (both adapters are now
+part of the enforced dependency matrix), multiple publication owners, and format
+writers that inspect final targets.
 
 ## Public compatibility boundary
 
 The supported Python boundary is the five functions exported from `dietrich`:
 `inspect_document`, `unlock_document`, `inspect_workbook`, `unlock_workbook`, and
 `export_document_hash`, together with their exported value and error types. The
-console entry points, CLI flags and exit codes, documented JSON and result
-fields, file formats, and default output naming are observable contracts too.
-Internal format functions are not compatibility facades.
+exported types include the assessment vocabulary returned on
+`DocumentInspection` — `ProtectionLayer`, `Capability`, `CapabilityCode`,
+`Blocker`, and `BlockerCode` — so callers can annotate and match against the enum
+classes rather than raw strings. The four console entry points (`dietrich`,
+`dietrich-tui`, `dietrich-gui`, and the separate lab-only `dietrich-research`),
+CLI flags and exit codes, documented JSON and result fields, file formats, and
+default output naming are observable contracts too. Internal format functions are
+not compatibility facades.
 
 All five functions accept an optional keyword-only `control=None`. Callers can
 pass a fresh `OperationControl` and catch `OperationCancelledError`; existing

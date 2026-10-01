@@ -5,10 +5,12 @@ limited to authorized document workflows.
 
 ## Set up
 
-Install [uv](https://docs.astral.sh/uv/), then from the repository root:
+Install [uv](https://docs.astral.sh/uv/), then from the repository root. The
+`demo` group carries the Playwright runtime that `pyright` and the browser/demo
+tests need:
 
 ```bash
-uv sync --locked --all-extras
+uv sync --locked --all-extras --group demo
 ```
 
 CI covers Python 3.11, 3.12, and 3.13 on Ubuntu. Do not update `uv.lock` as a
@@ -68,12 +70,13 @@ uv build --offline --no-sources --no-create-gitignore --out-dir "$build_dir"
 Packaging or entry-point changes also require:
 
 ```bash
-uv run python scripts/check_distributions.py "$build_dir"
+uv run python scripts/check_distributions.py "$build_dir" --python 3.12
 ```
 
-That script checks archive boundaries and the six TCSS files, installs each
-artifact in its own clean environment, and smokes all three console entry points
-outside the checkout.
+That script checks archive boundaries, the bundled TUI stylesheets, and the GUI
+assets, installs each artifact in its own clean environment, and smokes every
+console entry point (`dietrich`, `dietrich-tui`, `dietrich-gui`,
+`dietrich-research`) outside the checkout.
 
 For static demo work, install the demo group and browser, then run its tests:
 

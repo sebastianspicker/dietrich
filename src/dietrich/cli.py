@@ -49,13 +49,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _execute_parsed_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
-    """Route parsed flags to UI, research, or the ordinary document command."""
+    """Route parsed flags to the terminal UI or the ordinary document command."""
     if getattr(args, "tui", False):
         return _run_tui(args.input)
-    if getattr(args, "research_fuzz", False):
-        if not args.input:
-            parser.error("INPUT is required for --research-fuzz")
-        return _run_research_fuzz(args)
     if not args.input:
         parser.error("INPUT is required (or pass --tui for the terminal UI)")
     return _run_document_command(args)
@@ -145,20 +141,6 @@ def _print_unlock_result(result: UnlockResult, *, as_json: bool) -> None:
         print(json.dumps(_result_dict(result), indent=2, default=str))
     else:
         _print_result(result)
-
-
-def _run_research_fuzz(args: argparse.Namespace) -> int:
-    """Generate local OOXML mutants for lab research (not product unlock)."""
-    from dietrich.research.fuzz_gen import generate_ooxml_mutants, generate_xml_part_mutants
-
-    seed = Path(args.input)
-    out = Path(args.output) if args.output else Path("research/fuzz/out")
-    paths = generate_xml_part_mutants(seed, out, count=args.fuzz_count, seed=args.fuzz_seed)
-    if not paths:
-        paths = generate_ooxml_mutants(seed, out, count=args.fuzz_count, seed=args.fuzz_seed)
-    print(f"Wrote {len(paths)} mutants under {out}")
-    print("Lab use only: do not distribute as weaponized documents.")
-    return 0
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -259,7 +241,7 @@ def _add_recovery_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_advanced_arguments(parser: argparse.ArgumentParser) -> None:
-    """Add signing, VBA, hash-export, and lab-only fuzzing command flags."""
+    """Add signing, VBA, and hash-export command flags."""
     parser.add_argument(
         "--resign-cert",
         metavar="PEM",
@@ -284,23 +266,6 @@ def _add_advanced_arguments(parser: argparse.ArgumentParser) -> None:
         "--vba",
         action="store_true",
         help="Clear VBA project password verifiers in vbaProject.bin (opt-in)",
-    )
-    parser.add_argument(
-        "--research-fuzz",
-        action="store_true",
-        help="Experimental: generate local fuzz mutants from INPUT into --output dir",
-    )
-    parser.add_argument(
-        "--fuzz-count",
-        type=int,
-        default=10,
-        help="Experimental: mutant count for --research-fuzz",
-    )
-    parser.add_argument(
-        "--fuzz-seed",
-        type=int,
-        default=0,
-        help="Experimental: RNG seed for --research-fuzz",
     )
 
 

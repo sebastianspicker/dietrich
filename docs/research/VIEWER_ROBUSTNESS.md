@@ -1,10 +1,11 @@
 # OOXML mutation research
 
-The research command writes mutated copies of a ZIP OOXML file for local parser
-and viewer testing:
+The `dietrich-research` command (also runnable as `python -m dietrich.research`)
+writes mutated copies of a ZIP OOXML file for local parser and viewer testing.
+It is a separate lab utility, not part of the `dietrich` document command:
 
 ```bash
-dietrich input.xlsx --research-fuzz --fuzz-count 20 --fuzz-seed 7
+dietrich-research input.xlsx --count 20 --seed 7
 ```
 
 The default destination is `research/fuzz/out`. Mutations mix selected XML

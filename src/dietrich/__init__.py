@@ -12,6 +12,12 @@ from dietrich.dispatch import (
     unlock_document,
     unlock_workbook,
 )
+from dietrich.domain.assessment import (
+    Blocker,
+    BlockerCode,
+    Capability,
+    CapabilityCode,
+)
 from dietrich.domain.models import (
     AttackOptions,
     AttackResult,
@@ -19,6 +25,7 @@ from dietrich.domain.models import (
     DocumentInspection,
     ProtectedPart,
     ProtectedWorksheet,
+    ProtectionLayer,
     RemovalCounts,
     UnlockOptions,
     UnlockResult,
@@ -43,6 +50,10 @@ __all__ = [
     "OperationCancelledError",
     "AttackOptions",
     "AttackResult",
+    "Blocker",
+    "BlockerCode",
+    "Capability",
+    "CapabilityCode",
     "DietrichError",
     "DocumentFormat",
     "DocumentInspection",
@@ -53,6 +64,7 @@ __all__ = [
     "PasswordNotFoundError",
     "ProtectedPart",
     "ProtectedWorksheet",
+    "ProtectionLayer",
     "RemovalCounts",
     "SignedDocumentError",
     "UnlockOptions",

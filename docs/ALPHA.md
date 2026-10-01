@@ -28,7 +28,7 @@ interaction, loopback-session, and process-lifetime boundaries are documented in
 | OOXML re-signing | Experimental | W3C XML-DSig-valid RSA/SHA-256 subset; no complete OPC or Office compatibility claim |
 | VBA project verifier clearing | Experimental | Recognized CMG, DPB, and GC fields only |
 | Microsoft Purview, Azure RMS, and IRM | Detection only | Processing is rejected |
-| OOXML mutation research | Experimental | Local byte and XML mutations; no viewer automation |
+| OOXML mutation research | Experimental | Separate `dietrich-research` command; local byte and XML mutations; no viewer automation |
 
 ## Password recovery
 

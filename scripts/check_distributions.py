@@ -86,7 +86,7 @@ def smoke(artifact: Path, python: str) -> None:
             cwd=root,
             env=env,
         )
-        for entrypoint in ("dietrich", "dietrich-tui", "dietrich-gui"):
+        for entrypoint in ("dietrich", "dietrich-tui", "dietrich-gui", "dietrich-research"):
             subprocess.run(
                 [str(bin_dir / entrypoint), "--help"],
                 check=True,
@@ -133,7 +133,7 @@ finally:
     thread.join()
 """
         subprocess.run([str(interpreter), "-I", "-c", gui_code], check=True, cwd=root, env=env)
-        print(f"Installed {artifact.name}: three entry points and local GUI assets verified.")
+        print(f"Installed {artifact.name}: four entry points and local GUI assets verified.")
 
 
 def main() -> None:

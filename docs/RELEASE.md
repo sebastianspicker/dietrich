@@ -40,7 +40,7 @@ Before publishing a package release, a maintainer must separately verify:
 
 - `uv lock --check --offline` and the complete automated gate;
 - source and wheel builds in a clean supported Python environment;
-- installation and all three console entry points from each artifact;
+- installation and all four console entry points from each artifact;
 - intended Office and PDF viewer behavior on representative authorized files;
 - dependency and vulnerability status;
 - the repository tag, artifact checksums, and publication provenance.
