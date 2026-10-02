@@ -10,22 +10,28 @@
     <script src="script.js" defer></script>
   </head>
   <body>
-    <a class="skip-link" href="#workbench">Skip to demo</a>
+    <a class="skip-link" href="#workbench">Skip to the bench</a>
 
     <header class="topbar">
       <div class="brand">
         <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-          <circle cx="12.5" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2.4"/>
-          <path d="M17 15.5 L26 24.5 M22.5 21 l2.6 -2.6 M25 23.5 l2.2 -2.2" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+          <!-- tension wrench -->
+          <path d="M6.5 25.5 L6.5 20.5 L12.5 20.5" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+          <!-- hook pick: shaft with a hooked tip -->
+          <path d="M10 22 L23 9" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
+          <path d="M23 9 q3.2 -3.2 5.4 -0.6 q1.1 1.3 -0.3 2.7" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
         </svg>
-        <div class="brand-text">
+        <span class="brand-text">
           <span class="brand-name">Dietrich</span>
           <span class="brand-tagline">the office picklock</span>
-        </div>
+        </span>
       </div>
       <div class="topbar-meta">
-        <span class="chip chip--quiet">ALPHA 0.4.0a5</span>
-        <span class="chip chip--demo">Static demo</span>
+        <span class="netstat" title="This page makes no network requests beyond its own files.">
+          <span class="netstat-dot" aria-hidden="true"></span>no network
+        </span>
+        <span class="chip chip--quiet">alpha 0.4.0a5</span>
+        <span class="chip chip--demo">static demo</span>
       </div>
     </header>
 
@@ -35,19 +41,19 @@
         <path d="M8 6.2v3.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
         <circle cx="8" cy="11.8" r="0.9" fill="currentColor"/>
       </svg>
-      <p><strong>Simulation only.</strong> Sanitized fixture names — this page cannot access, inspect, change, or upload files.</p>
+      <p><strong>Simulation only.</strong> Sanitized fixture names. This page cannot open, read, change, or upload files — every result below is pre-written.</p>
       <a class="notice-link" href="https://github.com/sebastianspicker/dietrich">View source</a>
     </div>
 
     <div class="plaque" role="note" aria-label="Authorized use">
       <span class="plaque-seal" aria-hidden="true">§</span>
-      <p>Authorized use only — documents you own or may modify. Soft locks are not encryption. IRM&nbsp;/&nbsp;Purview requires a valid license.</p>
+      <p><strong>Authorized use only.</strong> Documents you own or may modify. Soft locks are not encryption; IRM&nbsp;/&nbsp;Purview requires a valid license and is never modified.</p>
     </div>
 
     <main class="workbench" id="workbench">
-      <nav class="rail" aria-label="Sanitized demo fixtures">
+      <aside class="rail" aria-label="Sanitized demo fixtures">
         <div class="rail-head">
-          <h2 class="rail-title">Session</h2>
+          <h2 class="rail-title">Specimen tray</h2>
           <span class="rail-count" id="rail-count">4 fixtures</span>
         </div>
         <div class="fixture-list" role="group" aria-label="Fixtures" id="fixture-list"></div>
@@ -55,16 +61,18 @@
           <span class="dot dot--ok" aria-hidden="true"></span>
           <span id="rail-status">Ready · no network</span>
         </div>
-      </nav>
+      </aside>
 
       <section class="bench" aria-label="Dietrich click-through simulation">
 
-        <section class="block" aria-labelledby="doc-label">
+        <section class="block block--intake" aria-labelledby="doc-label">
           <div class="block-head">
             <h2 class="block-label" id="doc-label">Document</h2>
+            <span class="block-hint">local path · never uploaded</span>
           </div>
           <div class="intake">
             <div class="path-field">
+              <span class="path-tick" aria-hidden="true"></span>
               <span class="path-value" id="input-path">fixtures/board_report.xlsx</span>
               <span class="chip chip--format" id="file-kind">XLSX</span>
             </div>
@@ -86,21 +94,34 @@
               <div><dt>IRM gate</dt><dd id="meta-irm">active</dd></div>
             </dl>
           </div>
-          <p class="dossier-lede" id="dossier-lede">Choose a sanitized fixture, then run the simulated inspection.</p>
+
+          <div class="gauge" aria-hidden="true">
+            <span class="gauge-cap gauge-cap--lo">locked</span>
+            <div class="gauge-rail">
+              <span class="gauge-tick"></span><span class="gauge-tick"></span>
+              <span class="gauge-tick"></span><span class="gauge-tick"></span>
+              <span class="gauge-tick"></span>
+              <span class="gauge-marker"></span>
+            </div>
+            <span class="gauge-cap gauge-cap--hi">open</span>
+          </div>
+
+          <p class="dossier-lede" id="dossier-lede">Choose a sanitized fixture from the tray, then run the simulated inspection.</p>
           <dl class="findings" id="findings" hidden></dl>
           <p class="next-step" id="next-step">
-            <span class="next-step-marker" aria-hidden="true">→</span>
+            <span class="next-step-marker" aria-hidden="true"></span>
             <span id="next-step-text">Inspect the selected fixture.</span>
           </p>
         </section>
 
-        <section class="block" aria-labelledby="out-label">
+        <section class="block block--output" aria-labelledby="out-label">
           <div class="block-head">
-            <h2 class="block-label" id="out-label">Output</h2>
-            <span class="block-hint">Original preserved · side-by-side by default</span>
+            <h2 class="block-label" id="out-label">Working copy</h2>
+            <span class="block-hint">original preserved · written side-by-side</span>
           </div>
           <div class="intake">
             <div class="path-field path-field--output">
+              <span class="path-tick" aria-hidden="true"></span>
               <span class="path-value" id="output-path">fixtures/board_report_unprotected.xlsx</span>
             </div>
             <label class="switch">
@@ -109,7 +130,7 @@
               <span class="switch-label">Overwrite</span>
             </label>
             <button class="btn btn--primary" type="button" id="unlock">
-              Unlock working copy
+              Unlock copy
               <kbd>U</kbd>
             </button>
           </div>
@@ -118,7 +139,7 @@
         <div class="utility">
           <details class="advanced" id="advanced">
             <summary>
-              <span>Advanced</span>
+              <span class="advanced-title">Advanced</span>
               <span class="advanced-hint">password · wordlist · mask · signatures · hashcat</span>
             </summary>
             <div class="advanced-grid">
@@ -141,18 +162,18 @@
                 <label class="check"><input type="checkbox"><span>Unlock VBA</span></label>
                 <label class="check"><input type="checkbox"><span>Use hashcat</span></label>
               </fieldset>
-              <p class="advanced-note">No values leave this page or invoke Dietrich.</p>
+              <p class="advanced-note">Nothing here leaves the page or invokes Dietrich. These controls mirror the real CLI flags.</p>
             </div>
           </details>
           <div class="utility-actions">
             <button class="btn btn--ghost" type="button" id="export">Export hash <kbd>E</kbd></button>
-            <button class="btn btn--ghost" type="button" id="reset">Reset demo <kbd>R</kbd></button>
+            <button class="btn btn--ghost" type="button" id="reset">Reset <kbd>R</kbd></button>
           </div>
         </div>
 
         <section class="activity" aria-labelledby="activity-heading">
           <div class="activity-head">
-            <h2 class="block-label" id="activity-heading">Activity</h2>
+            <h2 class="block-label" id="activity-heading">Ledger</h2>
             <span class="session-state" id="session-state">Ready</span>
           </div>
           <ol class="log" id="activity-log" aria-live="polite">
@@ -163,13 +184,12 @@
         <section class="tour" aria-labelledby="tour-heading">
           <div class="block-head">
             <h2 class="block-label" id="tour-heading">Screenshot tour</h2>
-            <span class="block-hint">Real local app · not this simulation</span>
+            <span class="block-hint">the real dietrich-gui · not this simulation</span>
           </div>
           <p class="tour-lede">
-            These captures show the bundled <code>dietrich-gui</code> desktop interface working on a
-            synthetic workbook with three worksheet locks and one workbook lock. The page above is a
-            separate, fixture-only simulation. The images are static: they run no commands and change
-            nothing.
+            Field captures of the bundled <code>dietrich-gui</code> desktop interface working on a
+            synthetic workbook with three worksheet locks and one workbook lock. The bench above is a
+            separate, fixture-only simulation; these images run no commands and change nothing.
           </p>
           <ol class="tour-grid">
             <li class="tour-step">
@@ -237,12 +257,11 @@
                   decoding="async"
                   alt="The same review screen at a narrow 390-pixel width, with the file summary, protection checkboxes, file name and folder fields, and the Back and Create working copy buttons stacked vertically.">
                 <figcaption class="tour-caption">
-                  <span class="tour-index" aria-hidden="true">5</span>
+                  <span class="tour-tag" aria-hidden="true">390&nbsp;px</span>
                   <span class="tour-text">
-                    <strong>Narrow layout</strong>
-                    The same review and save flow at 390&nbsp;px. At small widths the form and
-                    destination controls stack, full paths wrap, and every control keeps a visible
-                    label and focus ring.
+                    <strong>The same bench, narrow</strong>
+                    At a phone width the review and save flow stacks: full paths wrap, destination
+                    controls drop below the form, and every control keeps a visible label and focus ring.
                   </span>
                 </figcaption>
               </figure>
@@ -264,17 +283,16 @@
     <dialog class="help" id="help" aria-labelledby="help-title">
       <h2 id="help-title">About this demo</h2>
       <p>
-        This is a static click-through of the Dietrich terminal interface. Every action is
-        simulated against sanitized fixtures — nothing is read, written, or sent anywhere.
+        A static click-through of the Dietrich terminal interface. Every action is simulated
+        against sanitized fixtures — nothing is read, written, or sent anywhere.
       </p>
       <p>
-        The real application is a local CLI and Textual TUI for inspecting document
-        protection, removing soft locks, and recovering open passwords on documents you
-        are authorized to modify.
+        The real application is a local CLI and Textual TUI that inspects document protection,
+        removes soft locks, and recovers open passwords on documents you are authorized to modify.
       </p>
       <ul>
-        <li><strong>Soft locks</strong> — editable flags; removed side-by-side, original untouched.</li>
-        <li><strong>Open passwords</strong> — verified explicitly or recovered with bounded, local methods.</li>
+        <li><strong>Soft locks</strong> — editable flags; removed into a side-by-side copy, original untouched.</li>
+        <li><strong>Open passwords</strong> — verified explicitly, or recovered with bounded, local methods.</li>
         <li><strong>IRM / Purview</strong> — always fails closed; a valid license is required.</li>
       </ul>
       <form method="dialog">

@@ -11,6 +11,12 @@ can change between releases until a stable release is tagged.
 
 ### Changed
 
+- Redesigned the static `site/` demo around a "shear line" concept: the
+  fixture-only Instrument Workbench now reads as a local document-locksmith's
+  bench, with a locked-to-open readout gauge, a spec-sheet findings list, and a
+  reworked screenshot tour. Behaviour, fixtures, the simulation/authorization
+  notices, keyboard shortcuts, and the no-network/no-storage guarantees are
+  unchanged; the work is markup and styling only (system fonts, no new assets).
 - The experimental OOXML mutation-research generator moved out of the main
   `dietrich` command into its own `dietrich-research` console entry point (also
   runnable as `python -m dietrich.research`). The capability is unchanged; only
