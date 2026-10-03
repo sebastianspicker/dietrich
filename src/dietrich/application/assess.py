@@ -189,10 +189,14 @@ def _cfbf_container_summary(
 def _cfbf_stream_names(path: Path) -> set[str] | None:
     try:
         from dietrich.safety.cfb import list_stream_names
-
-        return list_stream_names(path)
-    except (ImportError, OSError, ValueError):
+    except ImportError:
         return None
+    try:
+        return list_stream_names(path)
+    except ImportError:
+        return None
+    except (OSError, ValueError) as exc:
+        raise InvalidDocumentError(f"{path} is not a readable OLE/CFB file: {exc}") from exc
 
 
 def _cfbf_stream_summary(

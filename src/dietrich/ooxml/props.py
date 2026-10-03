@@ -8,6 +8,7 @@ from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
 
 from dietrich.domain.models import ProtectedPart, UnlockOptions
+from dietrich.errors import InvalidDocumentError
 from dietrich.ooxml.stats import PartStats
 from dietrich.ooxml.xml_strip import ElementLike, count_elements, local_name
 
@@ -25,7 +26,9 @@ def inspect_props_parts(names: list[str], read) -> list[ProtectedPart]:
     if CUSTOM_PROPS in names:
         data = read(CUSTOM_PROPS)
         if b"MarkAsFinal" in data or b"_MarkAsFinal" in data:
-            parts.append(ProtectedPart(path=CUSTOM_PROPS, kind="MarkAsFinal", count=1))
+            count = _inspect_custom_mark_as_final(data)
+            if count:
+                parts.append(ProtectedPart(path=CUSTOM_PROPS, kind="MarkAsFinal", count=count))
     return parts
 
 
@@ -79,13 +82,22 @@ def _clear_doc_security(data: bytes, stats: PartStats) -> bytes:
 
 
 def _clear_custom_mark_as_final(data: bytes, stats: PartStats) -> bytes:
-    """Remove custom-property MarkAsFinal flags, using a safe XML fallback."""
+    """Remove custom-property MarkAsFinal flags from parsed XML only."""
     if b"MarkAsFinal" not in data and b"_MarkAsFinal" not in data:
         return data
     try:
         return _remove_custom_properties(data, stats)
-    except (DefusedXmlException, ElementTree.ParseError):
-        return _remove_custom_properties_by_pattern(data, stats)
+    except (DefusedXmlException, ElementTree.ParseError) as exc:
+        raise InvalidDocumentError(f"{CUSTOM_PROPS} is not valid safe XML") from exc
+
+
+def _inspect_custom_mark_as_final(data: bytes) -> int:
+    """Count recognized custom-property flags only after safe XML parsing."""
+    try:
+        root = ElementTree.fromstring(data)
+    except (DefusedXmlException, ElementTree.ParseError) as exc:
+        raise InvalidDocumentError(f"{CUSTOM_PROPS} is not valid safe XML") from exc
+    return sum(_is_mark_as_final_property(element) for element in root.iter())
 
 
 def _remove_custom_properties(data: bytes, stats: PartStats) -> bytes:
@@ -127,16 +139,3 @@ def _is_mark_as_final_property(element: ElementLike) -> bool:
         for key, value in element.attrib.items()
         if key == "name" or key.endswith("name")
     )
-
-
-def _remove_custom_properties_by_pattern(data: bytes, stats: PartStats) -> bytes:
-    """Remove malformed XML property blocks containing MarkAsFinal markers."""
-    cleaned, removed = re.subn(
-        rb"<[^>]*property[^>]*MarkAsFinal[^>]*/>|<property\b[^>]*MarkAsFinal.*?</property>",
-        b"",
-        data,
-        flags=re.I | re.S,
-    )
-    if removed:
-        stats.add("markAsFinal", removed)
-    return cleaned if removed else data

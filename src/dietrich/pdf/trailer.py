@@ -2,47 +2,86 @@
 
 A tiny bounded tokenizer used as a fallback when pikepdf cannot open a file,
 plus the field decoders that read typed values out of the parsed dictionary.
-Operates only on an already size-limited buffer, performs no I/O, and depends
-only on the standard library. hash.py turns these fields into a hash string.
+Operates only on an already size-limited buffer and performs no I/O. hash.py
+turns these fields into a hash string.
 """
 
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
+from dataclasses import dataclass
+
+from dietrich.errors import InvalidDocumentError
+from dietrich.operation import checkpoint
+
+MAX_PDF_DICTIONARY_DEPTH = 64
+MAX_PDF_STRUCTURAL_ITEMS = 100_000
+_LINE_END = re.compile(rb"[\r\n]")
+_DIRECT_STREAM_LENGTH = re.compile(rb"/Length\s+(\d+)\s*(?:/|$)")
+
+
+@dataclass(frozen=True)
+class _DictionarySpan:
+    """Offsets for one balanced PDF dictionary."""
+
+    open_start: int
+    body_start: int
+    body_end: int
 
 
 def find_encrypt_dict(raw: bytes) -> dict[str, str] | None:
-    """Very small PDF tokenizer: find /Encrypt dict body as key→value strings."""
-    trailer_dict = _trailer_encrypt_dict(raw)
+    """Find a Standard-handler dictionary through one bounded structural index."""
+    spans = _dictionary_spans(raw)
+    starts = [span.open_start for span in spans]
+    standard_starts = {span.open_start for span in spans if _is_standard_encrypt_span(raw, span)}
+    trailer_dict = _trailer_encrypt_dict(raw, spans, starts, standard_starts)
     if trailer_dict is not None:
         return trailer_dict
-    return _scan_standard_encrypt_dict(raw)
+    return _scan_standard_encrypt_dict(raw, spans, standard_starts)
 
 
-def _trailer_encrypt_dict(raw: bytes) -> dict[str, str] | None:
+def _trailer_encrypt_dict(
+    raw: bytes,
+    spans: list[_DictionarySpan],
+    starts: list[int],
+    standard_starts: set[int],
+) -> dict[str, str] | None:
     """Resolve an inline or indirect Encrypt dictionary referenced by the trailer."""
-    search_end = len(raw)
-    while (marker_start := raw.rfind(b"trailer", 0, search_end)) >= 0:
-        search_end = marker_start
+    trailers = _bounded_matches(re.compile(rb"trailer"), raw, "trailer markers")
+    references = _bounded_matches(
+        re.compile(rb"/Encrypt\s+(\d+)\s+(\d+)\s+R"), raw, "Encrypt references"
+    )
+    inline = _bounded_matches(re.compile(rb"/Encrypt\s*<<"), raw, "inline Encrypt values")
+    objects = _object_headers(raw)
+    reference_positions = [match.start() for match in references]
+    inline_positions = [match.start() for match in inline]
+
+    for trailer_match in reversed(trailers):
+        marker_start = trailer_match.start()
         marker_end = marker_start + len(b"trailer")
         if not _has_keyword_boundaries(raw, marker_start, marker_end):
             continue
-        body = _extract_balanced_dict(raw, marker_end)
-        if body is None:
+        trailer_span = _first_span_after(spans, starts, marker_end)
+        if trailer_span is None:
             continue
-        reference = re.search(rb"/Encrypt\s+(\d+)\s+(\d+)\s+R", body)
-        if reference is not None:
-            parsed = _referenced_encrypt_dict(
-                raw,
-                int(reference.group(1)),
-                int(reference.group(2)),
+        reference_index = bisect_left(reference_positions, trailer_span.body_start)
+        if (
+            reference_index < len(references)
+            and references[reference_index].start() < trailer_span.body_end
+        ):
+            reference = references[reference_index]
+            object_end = objects.get((int(reference.group(1)), int(reference.group(2))))
+            object_span = (
+                _first_span_after(spans, starts, object_end) if object_end is not None else None
             )
-            if parsed is not None:
-                return parsed
-        if re.search(rb"/Encrypt\s*<<", body):
-            parsed = _parse_dict_body(_extract_inline_dict(body, b"/Encrypt"))
-            if parsed:
-                return parsed
+            if object_span is not None and object_span.open_start in standard_starts:
+                return _parse_dict_body(raw[object_span.body_start : object_span.body_end])
+        inline_index = bisect_left(inline_positions, trailer_span.body_start)
+        if inline_index < len(inline) and inline[inline_index].start() < trailer_span.body_end:
+            inline_span = _span_at_open(spans, starts, inline[inline_index].end() - 2)
+            if inline_span is not None and inline_span.open_start in standard_starts:
+                return _parse_dict_body(raw[inline_span.body_start : inline_span.body_end])
     return None
 
 
@@ -54,74 +93,160 @@ def _has_keyword_boundaries(raw: bytes, start: int, end: int) -> bool:
     )
 
 
-def _referenced_encrypt_dict(
-    raw: bytes, object_number: int, generation: int
+def _scan_standard_encrypt_dict(
+    raw: bytes, spans: list[_DictionarySpan], standard_starts: set[int]
 ) -> dict[str, str] | None:
-    """Read a trailer-referenced dictionary only when it has Standard hash fields."""
-    match = re.search(rf"{object_number}\s+{generation}\s+obj".encode(), raw)
-    if match is None:
-        return None
-    body = _extract_balanced_dict(raw, match.end())
-    if body is None:
-        return None
-    parsed = _parse_dict_body(body)
-    return parsed if "O" in parsed and "U" in parsed else None
-
-
-def _scan_standard_encrypt_dict(raw: bytes) -> dict[str, str] | None:
     """Find the first dictionary that looks like a Standard security handler."""
-    for m in re.finditer(rb"<<", raw):
-        body = _extract_balanced_dict(raw, m.start())
-        if body is not None and _is_standard_encrypt_dict(body):
-            return _parse_dict_body(body)
+    for span in spans:
+        if span.open_start in standard_starts:
+            return _parse_dict_body(raw[span.body_start : span.body_end])
     return None
 
 
-def _is_standard_encrypt_dict(body: bytes) -> bool:
+def _is_standard_encrypt_span(raw: bytes, span: _DictionarySpan) -> bool:
     """Identify the minimally required Standard-handler dictionary tokens."""
-    return all(token in body for token in (b"/Filter", b"/Standard", b"/O", b"/U"))
+    return all(
+        raw.find(token, span.body_start, span.body_end) >= 0
+        for token in (b"/Filter", b"/Standard", b"/O", b"/U")
+    )
 
 
-def _extract_balanced_dict(raw: bytes, start: int) -> bytes | None:
-    """From start (at or before '<<'), return inner body of balanced <<...>>."""
-    i = raw.find(b"<<", start)
-    if i < 0:
-        return None
-    depth = 0
-    j = i
-    while j < len(raw) - 1:
-        if raw[j : j + 2] == b"<<":
-            depth += 1
-            j += 2
+def _dictionary_spans(raw: bytes) -> list[_DictionarySpan]:
+    """Index balanced dictionaries once while bounding nesting and item count."""
+    spans: list[_DictionarySpan] = []
+    stack: list[int] = []
+    last_outer_span: _DictionarySpan | None = None
+    opened = 0
+    index = 0
+    while index < len(raw):
+        if index % 65_536 == 0:
+            checkpoint()
+        byte = raw[index]
+        if not stack and raw.startswith(b"stream", index):
+            keyword_end = index + len(b"stream")
+            if _has_keyword_boundaries(raw, index, keyword_end):
+                data_start = _stream_data_start(raw, keyword_end)
+                if data_start is not None:
+                    index = _stream_end(raw, data_start, last_outer_span)
+                    continue
+        if byte == ord("%"):
+            index = _comment_end(raw, index)
             continue
-        if raw[j : j + 2] == b">>":
-            depth -= 1
-            j += 2
-            if depth == 0:
-                return raw[i + 2 : j - 2]
+        if stack and byte == ord("("):
+            index = _skip_literal_string(raw, index)
             continue
-        j += 1
+        if byte == ord("<") and index + 1 < len(raw):
+            if raw[index + 1] == ord("<"):
+                opened += 1
+                if opened > MAX_PDF_STRUCTURAL_ITEMS:
+                    raise InvalidDocumentError("PDF contains too many dictionaries")
+                if len(stack) >= MAX_PDF_DICTIONARY_DEPTH:
+                    raise InvalidDocumentError(
+                        f"PDF dictionary nesting exceeds {MAX_PDF_DICTIONARY_DEPTH} levels"
+                    )
+                stack.append(index)
+                index += 2
+                continue
+            closing = raw.find(b">", index + 1)
+            index = len(raw) if closing < 0 else closing + 1
+            continue
+        if byte == ord(">") and index + 1 < len(raw) and raw[index + 1] == ord(">"):
+            if stack:
+                start = stack.pop()
+                span = _DictionarySpan(start, start + 2, index)
+                spans.append(span)
+                if not stack:
+                    last_outer_span = span
+            index += 2
+            continue
+        index += 1
+    spans.sort(key=lambda span: span.open_start)
+    return spans
+
+
+def _comment_end(raw: bytes, start: int) -> int:
+    """Return the offset after a PDF comment terminated by CR, LF, or CRLF."""
+    match = _LINE_END.search(raw, start + 1)
+    if match is None:
+        return len(raw)
+    end = match.start() + 1
+    return end + 1 if raw[end - 1 : end + 1] == b"\r\n" else end
+
+
+def _stream_data_start(raw: bytes, keyword_end: int) -> int | None:
+    """Return the first byte after the required stream keyword line ending."""
+    if raw[keyword_end : keyword_end + 2] == b"\r\n":
+        return keyword_end + 2
+    if raw[keyword_end : keyword_end + 1] in {b"\r", b"\n"}:
+        return keyword_end + 1
     return None
 
 
-def _extract_inline_dict(trailer_body: bytes, key: bytes) -> bytes:
-    """Extract a balanced <<…>> dict starting at offset."""
-    idx = trailer_body.find(key)
-    if idx < 0:
-        return b""
-    rest = trailer_body[idx + len(key) :]
-    start = rest.find(b"<<")
-    if start < 0:
-        return b""
-    depth = 0
-    for i in range(start, len(rest) - 1):
-        if rest[i : i + 2] == b"<<":
+def _stream_end(raw: bytes, data_start: int, dictionary: _DictionarySpan | None) -> int:
+    """Skip opaque stream bytes using a direct bounded length when available."""
+    if dictionary is not None:
+        length_match = _DIRECT_STREAM_LENGTH.search(raw, dictionary.body_start, dictionary.body_end)
+        if length_match is not None:
+            declared_end = data_start + int(length_match.group(1))
+            if declared_end > len(raw):
+                raise InvalidDocumentError("PDF stream length exceeds the input")
+            marker = raw.find(b"endstream", declared_end, min(len(raw), declared_end + 64))
+            return marker + len(b"endstream") if marker >= 0 else declared_end
+    marker = raw.find(b"endstream", data_start)
+    return len(raw) if marker < 0 else marker + len(b"endstream")
+
+
+def _skip_literal_string(raw: bytes, start: int) -> int:
+    """Skip one PDF literal string, including escaped and nested parentheses."""
+    depth = 1
+    index = start + 1
+    while index < len(raw) and depth:
+        if raw[index] == ord("\\"):
+            index += 2
+            continue
+        if raw[index] == ord("("):
             depth += 1
-        elif rest[i : i + 2] == b">>":
+        elif raw[index] == ord(")"):
             depth -= 1
-            if depth == 0:
-                return rest[start + 2 : i]
-    return b""
+        index += 1
+    return index
+
+
+def _bounded_matches(pattern: re.Pattern[bytes], raw: bytes, label: str) -> list[re.Match[bytes]]:
+    """Collect bounded structural matches from one linear regular-expression scan."""
+    matches: list[re.Match[bytes]] = []
+    for match in pattern.finditer(raw):
+        if len(matches) >= MAX_PDF_STRUCTURAL_ITEMS:
+            raise InvalidDocumentError(f"PDF contains too many {label}")
+        matches.append(match)
+    return matches
+
+
+def _object_headers(raw: bytes) -> dict[tuple[int, int], int]:
+    """Index the first offset after each indirect-object header."""
+    pattern = re.compile(rb"(?<!\d)(\d+)\s+(\d+)\s+obj\b")
+    headers: dict[tuple[int, int], int] = {}
+    for match in _bounded_matches(pattern, raw, "indirect objects"):
+        headers.setdefault((int(match.group(1)), int(match.group(2))), match.end())
+    return headers
+
+
+def _first_span_after(
+    spans: list[_DictionarySpan], starts: list[int], offset: int
+) -> _DictionarySpan | None:
+    """Return the first indexed dictionary beginning at or after an offset."""
+    index = bisect_left(starts, offset)
+    return spans[index] if index < len(spans) else None
+
+
+def _span_at_open(
+    spans: list[_DictionarySpan], starts: list[int], offset: int
+) -> _DictionarySpan | None:
+    """Return the indexed dictionary with this exact opening offset."""
+    index = bisect_left(starts, offset)
+    if index < len(spans) and spans[index].open_start == offset:
+        return spans[index]
+    return None
 
 
 def _parse_dict_body(body: bytes) -> dict[str, str]:

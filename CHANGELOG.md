@@ -42,6 +42,13 @@ can change between releases until a stable release is tagged.
 
 ### Fixed
 
+- Hardened untrusted Office and PDF parsing: Agile password work factors are
+  capped, CFB parser failures remain fail-closed, raw PDF encryption dictionaries
+  use bounded structural indexing, and malformed marked custom properties no
+  longer enter a regular-expression recovery path.
+- Legacy CFB mutation now validates exact FAT and MiniFAT chain lengths, rejects
+  cycles and invalid sectors, and resolves streams by complete storage identity;
+  ambiguous duplicate stream names are rejected.
 - `AGENTS.md` is now tracked in version control instead of being excluded by a
   broad assistant-file ignore rule, so the repository guide ships with the
   source tree and matches CI.

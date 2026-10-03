@@ -13,7 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from dietrich.errors import EncryptedDocumentError, MissingDependencyError
+from dietrich.errors import EncryptedDocumentError, InvalidDocumentError, MissingDependencyError
+from dietrich.safety.bounded_io import read_file_prefix
+from dietrich.safety.cfb import CFBF_MAGIC, validate_cfb
+
+MAX_AGILE_SPIN_COUNT = 1_000_000
 
 
 @dataclass(frozen=True)
@@ -62,27 +66,8 @@ def _require_msoffcrypto():
 def is_encrypted_office_file(path: Path) -> bool:
     """True if msoffcrypto reports the file as encrypted."""
     msoffcrypto = _require_msoffcrypto()
-    with path.open("rb") as handle:
-        try:
-            office = msoffcrypto.OfficeFile(handle)
-        except (
-            AttributeError,
-            msoffcrypto.exceptions.FileFormatError,
-            msoffcrypto.exceptions.ParseError,
-            OSError,
-            TypeError,
-            ValueError,
-        ):
-            return False
-        return bool(getattr(office, "is_encrypted", lambda: False)())
-
-
-def open_office(path: Path) -> _OfficeSession:
-    """Open an OfficeFile handle (caller must close_office)."""
-    msoffcrypto = _require_msoffcrypto()
-    handle = path.open("rb")
     try:
-        office = msoffcrypto.OfficeFile(handle)
+        office = open_office(path)
     except (
         AttributeError,
         msoffcrypto.exceptions.FileFormatError,
@@ -91,9 +76,51 @@ def open_office(path: Path) -> _OfficeSession:
         TypeError,
         ValueError,
     ):
+        return False
+    try:
+        return bool(getattr(office, "is_encrypted", lambda: False)())
+    finally:
+        close_office(office)
+
+
+def open_office(path: Path) -> _OfficeSession:
+    """Open an OfficeFile handle (caller must close_office)."""
+    msoffcrypto = _require_msoffcrypto()
+    _validate_office_container(path)
+    handle = path.open("rb")
+    try:
+        office = msoffcrypto.OfficeFile(handle)
+        _validate_office_parameters(office)
+    except Exception:
         handle.close()
         raise
     return _OfficeSession(office=office, handle=handle)
+
+
+def _validate_office_container(path: Path) -> None:
+    """Validate CFB-backed Office input before handing it to msoffcrypto."""
+    if read_file_prefix(path, len(CFBF_MAGIC)) != CFBF_MAGIC:
+        return
+    try:
+        validate_cfb(path)
+    except (OSError, ValueError) as exc:
+        raise InvalidDocumentError(f"{path} is not a readable OLE/CFB file: {exc}") from exc
+
+
+def _validate_office_parameters(office: Any) -> None:
+    """Reject encryption metadata that would trigger excessive synchronous work."""
+    if getattr(office, "type", None) != "agile":
+        return
+    info = getattr(office, "info", None) or {}
+    try:
+        spin_count = int(info["spinValue"])
+    except (KeyError, OverflowError, TypeError, ValueError) as exc:
+        raise InvalidDocumentError("Agile encryption has an invalid spinCount") from exc
+    if spin_count < 0 or spin_count > MAX_AGILE_SPIN_COUNT:
+        raise InvalidDocumentError(
+            "Agile encryption spinCount must be between 0 and "
+            f"{MAX_AGILE_SPIN_COUNT}; found {spin_count}"
+        )
 
 
 def close_office(office: _OfficeSession) -> None:
@@ -275,6 +302,7 @@ def decrypt_to(path: Path, password: str, output_path: Path) -> None:
 
 def _load_office_key(office, password: str, *, verify_only: bool) -> None:
     """Use modern verification when available and decrypt to a sink on older releases."""
+    _validate_office_parameters(office)
     try:
         office.load_key(password=password, verify_password=True)
     except TypeError:

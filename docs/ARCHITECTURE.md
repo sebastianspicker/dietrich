@@ -154,7 +154,12 @@ The accepted decision is recorded in
   excessive expansion, ambiguous main parts, and signed packages unless
   stripping is explicit.
 - Bounded CFB handling limits input, directory entries, per-stream data, and
-  aggregate stream data.
+  aggregate stream data. Mutation resolves complete storage paths and owns FAT
+  and MiniFAT traversal with exact-length, index, and cycle checks.
+- Office Agile metadata is validated before key work; `spinCount` values above
+  1,000,000 are rejected at the shared msoffcrypto boundary.
+- Raw PDF encryption-dictionary fallback builds one bounded structural index,
+  and marked custom OOXML properties are mutated only after safe XML parsing.
 - BIFF mutation requires recognized BOF/EOF-framed substreams; arbitrary marker
   scanning is not permitted.
 - Legacy writers use equal-length patches and validate the reopened candidate.

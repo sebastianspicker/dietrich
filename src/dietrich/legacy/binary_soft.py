@@ -157,15 +157,13 @@ def _detect_kind(streams: dict[str, bytes]) -> str:
 
 
 def _find_stream(streams: dict[str, bytes], short_name: str) -> str | None:
-    """Locate preferred workbook/document stream path in OLE."""
-    for name in streams:
-        if (
-            name == short_name
-            or name.endswith("/" + short_name)
-            or name.split("/")[-1] == short_name
-        ):
-            return name
-    return None
+    """Locate an exact root stream or one unambiguous nested stream."""
+    if short_name in streams:
+        return short_name
+    matches = [name for name in streams if name.split("/")[-1] == short_name]
+    if len(matches) > 1:
+        raise InvalidDocumentError(f"ambiguous legacy Office stream name {short_name!r}")
+    return matches[0] if matches else None
 
 
 def _patch_biff_workbook(data: bytes) -> tuple[bytes, int]:

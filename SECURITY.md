@@ -46,15 +46,25 @@ file and one atomic replace.
 | Per-member size | 64 MiB |
 | Total uncompressed size | 512 MiB |
 | Compression ratio | 100:1 |
+| CFB input | 512 MiB |
+| CFB directory streams | 10,000 |
+| CFB stream | 128 MiB |
+| CFB aggregate stream data | 256 MiB |
+| Office Agile `spinCount` | 1,000,000 |
+| Raw PDF dictionary nesting | 64 levels |
 
 Duplicate and encrypted ZIP entries are rejected. Signed OOXML is rejected unless
 signature stripping is explicit; stripping creates an unsigned copy and removes
 authenticity evidence. Experimental re-signing neither implements complete
 Microsoft Office signature compatibility nor establishes certificate trust.
 
-Legacy Office editing is limited to recognized equal-length record patches. IRM
-detection fails closed. Unsupported, malformed, or ambiguous structures are
-rejected rather than processed with relaxed checks.
+Legacy Office editing is limited to recognized equal-length record patches. CFB
+allocation chains are bounded by declared stream size, checked for cycles, and
+resolved through their complete storage path before mutation. Raw PDF hash
+fallback parsing uses a bounded structural index. Custom OOXML properties with
+recognized final-state markers must be well-formed safe XML. IRM detection fails
+closed. Unsupported, malformed, or ambiguous structures are rejected rather
+than processed with relaxed checks.
 
 ## Dependencies and external tools
 

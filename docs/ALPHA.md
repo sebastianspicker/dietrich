@@ -17,8 +17,8 @@ interaction, loopback-session, and process-lifetime boundaries are documented in
 | Excel OOXML workbook protection | Supported | Can be retained with `--worksheets-only` |
 | Word OOXML document and write protection | Supported | Removes recognized settings elements |
 | PowerPoint OOXML modify verifier | Supported | Can be retained with `--keep-modify-verifier` |
-| OOXML package properties | Supported | Clears recognized `DocSecurity` and `MarkAsFinal` values |
-| Encrypted Office Agile and Standard formats | Optional | Requires `msoffcrypto-tool` and a recovered password |
+| OOXML package properties | Supported | Clears recognized `DocSecurity` and parsed `MarkAsFinal` values; malformed marked custom XML is rejected |
+| Encrypted Office Agile and Standard formats | Optional | Requires `msoffcrypto-tool` and a recovered password; Agile `spinCount` is capped at 1,000,000 |
 | Legacy `.xls`, `.doc` | Limited | Verified BIFF8 record and Word FIB field patches only |
 | Legacy `.ppt` | Inspection only | Mutation is rejected until a verified record parser exists |
 | PDF encryption and permissions | Optional | Requires `pikepdf` |
@@ -52,6 +52,12 @@ mode-`0600` file is published only after all optional post-processing succeeds.
 ZIP safety limits are 10,000 members, 64 MiB per member, 512 MiB total
 uncompressed content, and a 100:1 compression ratio. Duplicate and encrypted ZIP
 entries are rejected.
+
+CFB safety limits are 512 MiB per input, 10,000 streams, 128 MiB per stream,
+and 256 MiB aggregate declared stream data. Legacy mutation additionally
+requires exact storage-path identity and an acyclic allocation chain whose
+length matches the declared stream size. Raw PDF hash fallback rejects more
+than 64 nested dictionaries.
 
 ## Compatibility boundaries
 
