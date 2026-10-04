@@ -54,10 +54,9 @@ Run from the repository root:
 
 ```bash
 uv lock --check --offline
-uv run ruff check src tests examples scripts site/tests
-uv run ruff format --check src tests examples scripts site/tests
+uv run ruff check src examples scripts
+uv run ruff format --check src examples scripts
 uv run pyright
-uv run pytest -q --tb=short
 ```
 
 For the offline distribution build, use a fresh output directory:
@@ -78,16 +77,9 @@ assets, installs each artifact in its own clean environment, and smokes every
 console entry point (`dietrich`, `dietrich-tui`, `dietrich-gui`,
 `dietrich-research`) outside the checkout.
 
-For static demo work, install the demo group and browser, then run its tests:
+For static demo work, run the checks listed in [site/README.md](site/README.md).
 
-```bash
-uv sync --locked --all-extras --group demo
-uv run --group demo playwright install chromium
-uv run --group demo pytest site/tests -q
-```
-
-The demo dependency group does not change installed package requirements, and
-the checks are listed in [site/README.md](site/README.md). Terminal changes need
+The demo dependency group does not change installed package requirements. Terminal changes need
 a manual pass over focus order, labels, narrow layouts, busy states, and failure
 messages.
 

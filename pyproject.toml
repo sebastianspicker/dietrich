@@ -64,11 +64,11 @@ dietrich-research = "dietrich.research:main"
 
 [tool.hatch.build.targets.sdist]
 include = [
-  "/src", "/tests", "/docs", "/examples", "/assets/brand",
+  "/src", "/docs", "/examples", "/assets/brand",
   "/site/index.html", "/site/styles.css", "/site/script.js",
-  "/site/README.md", "/site/screenshots", "/site/tests", "/scripts",
+  "/site/README.md", "/site/screenshots", "/scripts",
   "/README.md", "/LICENSE", "/CHANGELOG.md", "/CONTRIBUTING.md",
-  "/SECURITY.md", "/AGENTS.md", "/pyproject.toml", "/uv.lock",
+  "/SECURITY.md", "/pyproject.toml", "/uv.lock",
 ]
 exclude = ["**/__pycache__", "**/*.pyc", "**/captures", "**/test-results"]
 

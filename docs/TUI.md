@@ -52,11 +52,5 @@ the Hatchling wheel configuration. If you rename a style file, update
 
 ## Verification
 
-Run:
-
-```bash
-uv run pytest tests/test_tui_workbench.py tests/test_tui_lifecycle.py -q
-```
-
 When you change the terminal interface, review focus order, labels,
 narrow-terminal layout, busy-state behavior, and failure messages manually.

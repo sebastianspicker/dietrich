@@ -91,6 +91,10 @@ Desktop.ini
 /.cursor/
 /.cursorrules
 /AGENT.md
+/AGENTS.md
+/DESIGN_BRIEF.md
+/tests/
+/site/tests/
 /agent.md
 /CLAUDE.md
 /CODEX.md

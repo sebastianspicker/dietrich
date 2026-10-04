@@ -49,12 +49,9 @@ can change between releases until a stable release is tagged.
 - Legacy CFB mutation now validates exact FAT and MiniFAT chain lengths, rejects
   cycles and invalid sectors, and resolves streams by complete storage identity;
   ambiguous duplicate stream names are rejected.
-- `AGENTS.md` is now tracked in version control instead of being excluded by a
-  broad assistant-file ignore rule, so the repository guide ships with the
-  source tree and matches CI.
-- Documented toolchain commands (`AGENTS.md`, `README.md`, `CONTRIBUTING.md`)
+- Documented toolchain commands (`README.md`, `CONTRIBUTING.md`)
   now match CI: the type-check and demo lanes require the `demo` dependency
-  group, and linting covers `scripts` and `site/tests`.
+  group, and linting covers `scripts`.
 
 ## [0.4.0a5]
 

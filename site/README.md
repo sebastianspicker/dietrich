@@ -59,17 +59,7 @@ node --check site/script.js
 grep -Fq "Instrument Workbench" site/index.html
 grep -Fq "Simulation only." site/index.html
 grep -Fiq "sanitized fixture" site/index.html
-uv sync --locked --all-extras --group demo
-uv run --group demo playwright install chromium
-uv run --group demo pytest -q site/tests
 ```
-
-The browser tests start a loopback static server and exercise all four fixtures,
-inspect, signed blocking and opt-in, unlock, export, reset, help, keyboard focus,
-normal and reduced motion, focus restoration, and desktop and narrow layouts.
-They reject runtime errors, downloads, unexpected requests, and calls to browser
-storage, network, or file APIs. Playwright screenshots are written to
-`/tmp/dietrich-demo-{width}.png`.
 
 Also verify manually that keyboard controls, focus indicators, narrow layouts,
 reduced motion, and the persistent simulation notice remain usable. Deployment

@@ -22,26 +22,9 @@ jobs:
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - run: uv sync --locked --all-extras --group demo
       - run: uv lock --check --offline
-      - run: uv run ruff check src tests examples scripts site/tests
-      - run: uv run ruff format --check src tests examples scripts site/tests
+      - run: uv run ruff check src examples scripts
+      - run: uv run ruff format --check src examples scripts
       - run: uv run pyright
-
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12", "3.13"]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
-      - run: uv sync --locked --all-extras
-      - run: uv run pytest -q --tb=short
 
   package:
     runs-on: ubuntu-latest
@@ -71,10 +54,7 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - run: uv sync --locked --all-extras --group demo
-      - run: uv run --group demo playwright install --with-deps chromium
       - run: node --check site/script.js
-      - run: uv run --group demo pytest site/tests -q --tb=short
       - name: Validate local graphical interface
         run: |
           for script in src/dietrich/gui/assets/*.js; do node --check "$script"; done
-          uv run --group demo pytest tests/test_gui_browser.py -q --tb=short

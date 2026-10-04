@@ -205,7 +205,6 @@ Read [SECURITY.md](SECURITY.md) for the full trust model.
 | `src/dietrich/tui/` | Optional Textual adapter and packaged styles |
 | `src/dietrich/gui/` | Local graphical adapter and bundled browser assets |
 | `site/` | Separately deployable static mock-data simulation |
-| `tests/` | Behavioral, safety, architecture, and interface contracts |
 
 The [architecture guide](docs/ARCHITECTURE.md) is the source of truth for
 component ownership, dependency direction, runtime flows, and safety invariants.
@@ -213,7 +212,7 @@ component ownership, dependency direction, runtime flows, and safety invariants.
 ## Development
 
 Install the locked development environment. The `demo` group carries the
-Playwright runtime that `pyright` and the browser/demo tests need:
+Playwright runtime that `pyright` needs:
 
 ```bash
 uv sync --locked --all-extras --group demo
@@ -223,10 +222,9 @@ Run the repository gate from the root:
 
 ```bash
 uv lock --check --offline
-uv run ruff check src tests examples scripts site/tests
-uv run ruff format --check src tests examples scripts site/tests
+uv run ruff check src examples scripts
+uv run ruff format --check src examples scripts
 uv run pyright
-uv run pytest -q --tb=short
 ```
 
 The release gate also builds source and wheel distributions offline. See

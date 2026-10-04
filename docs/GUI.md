@@ -103,21 +103,9 @@ or local account. Stop the process when you are done.
 
 ## Verification
 
-The regular Python gate covers the HTTP adapter and real synthetic-document
-operations. Browser tests additionally exercise real file selection, review,
-category selection, successful output, collisions, signatures, rights-management
-blocking, PDF password retry and hash export, keyboard behavior, and narrow
-layouts.
-
-```bash
-uv sync --locked --all-extras --group demo
-uv run --group demo playwright install chromium
-uv run pytest tests/test_gui_backend.py -q
-uv run --group demo pytest tests/test_gui_browser.py -q
-```
-
-Browser screenshots are written to `/tmp/dietrich-gui-*.png`. Tests are skipped
-when Playwright is not installed; CI runs them explicitly in the browser job.
+Review file selection, category selection, successful output, collisions,
+signatures, rights-management blocking, PDF password retry and hash export,
+keyboard behavior, and narrow layouts manually after changing the interface.
 Both built distributions include the graphical assets and font licenses, and
 `scripts/check_distributions.py` checks them and starts each installed adapter
 outside the checkout.

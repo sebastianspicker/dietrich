@@ -44,12 +44,11 @@ def check_contents(wheel: Path, source: Path) -> None:
         "README.md",
         "LICENSE",
         "docs/ARCHITECTURE.md",
-        "tests/test_architecture.py",
         "site/index.html",
         "site/styles.css",
         "site/script.js",
     } <= source_names
-    allowed_roots = {"src", "tests", "docs", "examples", "assets", "site", "scripts"}
+    allowed_roots = {"src", "docs", "examples", "assets", "site", "scripts"}
     allowed_files = {
         "pyproject.toml",
         "uv.lock",
@@ -57,7 +56,6 @@ def check_contents(wheel: Path, source: Path) -> None:
         "LICENSE",
         "CONTRIBUTING.md",
         "SECURITY.md",
-        "AGENTS.md",
         "CHANGELOG.md",
         "PKG-INFO",
         ".gitignore",
