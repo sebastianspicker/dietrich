@@ -11,7 +11,7 @@ server-managed rights licenses.
 
 Please do not publish exploit details, confidential documents, passwords, hashes,
 certificates, or private keys in a public issue. Use the repository's
-[private vulnerability reporting page](https://github.com/sebastianspicker/dietrich/security/advisories/new)
+[private vulnerability reporting page](https://github.com/sebastianspicker/dietrich-office-unlock/security/advisories/new)
 when it is available. If it is not, open a public issue that only asks for a
 private contact channel and contains no sensitive technical detail.
 

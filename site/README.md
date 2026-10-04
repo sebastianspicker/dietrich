@@ -19,7 +19,7 @@ python3 -m http.server 8000 --directory site
 ```
 
 Open `http://127.0.0.1:8000/`. Asset paths are relative, so the same files work
-under the `/dietrich/` GitHub Pages subpath.
+under the `/dietrich-office-unlock/` GitHub Pages subpath.
 
 ## Published files
 

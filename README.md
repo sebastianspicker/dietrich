@@ -7,7 +7,7 @@ modify. It inspects protection in Microsoft Office and PDF files, removes
 supported non-cryptographic restrictions, and recovers open passwords — all
 without sending your files anywhere.
 
-[![CI](https://github.com/sebastianspicker/dietrich/actions/workflows/ci.yml/badge.svg)](https://github.com/sebastianspicker/dietrich/actions/workflows/ci.yml)
+[![CI](https://github.com/sebastianspicker/dietrich-office-unlock/actions/workflows/ci.yml/badge.svg)](https://github.com/sebastianspicker/dietrich-office-unlock/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](docs/ALPHA.md)
@@ -34,7 +34,7 @@ The interface adapts to narrow screens too —
 [390&nbsp;px review capture](site/screenshots/05-review-mobile.png).
 
 Want to click through without installing anything? The
-[Instrument Workbench demo](https://sebastianspicker.github.io/dietrich/) is a
+[Instrument Workbench demo](https://sebastianspicker.github.io/dietrich-office-unlock/) is a
 static, fixture-only simulation of the terminal interface. It cannot select,
 upload, inspect, or change files, and it never runs Dietrich.
 
